@@ -3,7 +3,6 @@ import json, os, pandas as pd, plotly.express as px
 from datetime import datetime, timedelta
 import logging, hashlib, uuid
 from io import BytesIO
-from streamlit_lottie import st_lottie
 import requests
 
 # ---------------------------- LOGLAMA --------------------------------
@@ -42,22 +41,11 @@ ROLLER = config.get("roller", {"patron":["tümü"],"kasiyer":["barkod"],"depocu"
 OTURUM_SURESI = config.get("oturum_suresi_dk",30)
 SKT_UYARI_GUN = config.get("skt_uyari_gun",3)
 
-# ---------------------------- LOTTIE ---------------------------
-def load_lottie(url):
-    try:
-        r = requests.get(url)
-        if r.status_code == 200: return r.json()
-    except: pass
-    return None
-
-lottie_barcode = load_lottie("https://assets10.lottiefiles.com/packages/lf20_p1lnrvxs.json")
-lottie_success = load_lottie("https://assets2.lottiefiles.com/packages/lf20_jv0xz2sp.json")
-
 # ---------------------------- GÜVENLİK ---------------------------
 def guvenli_html(metin):
     return (str(metin).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;").replace("'","&#x27;"))
 
-# ---------------------------- CSS (YÜKSEK KONTRAST & İNTERAKTİF) ----------------------
+# ---------------------------- CSS --------------------------------
 def enerjik_css():
     st.markdown("""
     <style>
@@ -67,22 +55,12 @@ def enerjik_css():
             --text: #FFFFFF;
             --accent: #F97316;
             --accent2: #8B5CF6;
-            --success: #10B981;
-            --warning: #F59E0B;
-            --danger: #EF4444;
         }
         .stApp { background: var(--bg); }
         .main { color: var(--text); }
         header[data-testid="stHeader"] { background: #141B2D; }
-        section[data-testid="stSidebar"] {
-            background: #141B2D;
-            border-right: 1px solid #2D3748;
-        }
-        section[data-testid="stSidebar"] .stRadio label {
-            color: #FFFFFF !important;
-            font-weight: 600;
-            font-size: 1.05rem;
-        }
+        section[data-testid="stSidebar"] { background: #141B2D; }
+        section[data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; font-weight: 600; }
         div[data-testid="stMetric"] {
             background: linear-gradient(145deg, #1a1f35, #0f1424);
             border: 1px solid #2D3748;
@@ -96,15 +74,8 @@ def enerjik_css():
             transform: translateY(-5px);
             box-shadow: 0 15px 35px rgba(249,115,22,0.3);
         }
-        div[data-testid="stMetric"] label {
-            color: #CBD5E1 !important;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-        div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-            color: #FFFFFF !important;
-            font-size: 2.2rem;
-        }
+        div[data-testid="stMetric"] label { color: #CBD5E1 !important; font-weight: 600; }
+        div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2.2rem; }
         h1, h2, h3, h4, h5, h6 { color: #FFFFFF; font-weight: 700; }
         p, span, label, div, li { color: #E2E8F0; }
         .stButton > button {
@@ -133,23 +104,11 @@ def enerjik_css():
         }
         input::placeholder { color: #9CA3AF !important; }
         .stDataFrame {
-            border-radius: 18px;
-            overflow: hidden;
-            border: 1px solid #2D3748;
-            background: #141B2D;
+            border-radius: 18px; overflow: hidden; border: 1px solid #2D3748; background: #141B2D;
         }
-        .stDataFrame th {
-            background: #1E293B;
-            color: #FFFFFF;
-        }
-        .stDataFrame td {
-            background: #141B2D;
-            color: #E2E8F0;
-        }
-        .stDataFrame tr:hover td {
-            background: #1E293B;
-            cursor: pointer;
-        }
+        .stDataFrame th { background: #1E293B; color: #FFFFFF; }
+        .stDataFrame td { background: #141B2D; color: #E2E8F0; }
+        .stDataFrame tr:hover td { background: #1E293B; cursor: pointer; }
         .custom-container {
             background: #141B2D;
             border-radius: 24px;
@@ -203,7 +162,7 @@ def dosya_yaz(dosya_adi, veri):
 def veri_gecis_kontrol():
     degisti = False
     for u in st.session_state.stok:
-        for k,v in [("kategori","Diğer"),("min_miktar",0),("barkod",""),("son_kullanma_tarihi",""),("alis_fiyat",0),("satis_fiyat",0),("tedarikci",""),("raf_no",""),("kdv_oran",8)]:
+        for k,v in [("kategori","Diğer"),("min_miktar",0),("barkod",""),("son_kullanma_tarihi",""),("alis_fiyat",0),("satis_fiyat",0),("tedarikci",""),("raf_no",""),("kdv_oran",8),("tahmini_gunluk_satis",1.0)]:
             if k not in u: u[k]=v; degisti=True
     for s in st.session_state.fire:
         if "adet" in s and "miktar" not in s: s["miktar"]=s.pop("adet"); degisti=True
@@ -213,11 +172,11 @@ def veri_gecis_kontrol():
 
 def mock_stok_olustur():
     return [
-        {"urun_adi":"Un","miktar":150,"birim":"kg","kategori":"Kuru Gıda","min_miktar":20,"barkod":"8691234567890","son_kullanma_tarihi":"2026-12-31","alis_fiyat":18.50,"satis_fiyat":25.90,"tedarikci":"ABC Un Fabrikası","raf_no":"A1"},
-        {"urun_adi":"Şeker","miktar":5,"birim":"kg","kategori":"Kuru Gıda","min_miktar":10,"barkod":"8691234567891","son_kullanma_tarihi":"2026-05-15","alis_fiyat":22.00,"satis_fiyat":32.50,"tedarikci":"XYZ Şeker","raf_no":"A2"},
-        {"urun_adi":"Süt","miktar":40,"birim":"litre","kategori":"Süt Ürünleri","min_miktar":15,"barkod":"8691234567892","son_kullanma_tarihi":"2026-05-08","alis_fiyat":12.00,"satis_fiyat":18.90,"tedarikci":"Sütaş","raf_no":"B1"},
-        {"urun_adi":"Yumurta","miktar":200,"birim":"adet","kategori":"Diğer","min_miktar":30,"barkod":"8691234567893","son_kullanma_tarihi":"2026-05-06","alis_fiyat":2.50,"satis_fiyat":4.50,"tedarikci":"Köy Yumurtası","raf_no":"C1"},
-        {"urun_adi":"Tereyağı","miktar":25,"birim":"kg","kategori":"Süt Ürünleri","min_miktar":5,"barkod":"8691234567894","son_kullanma_tarihi":"2026-06-20","alis_fiyat":120.00,"satis_fiyat":175.00,"tedarikci":"Sütaş","raf_no":"B2"}
+        {"urun_adi":"Un","miktar":150,"birim":"kg","kategori":"Kuru Gıda","min_miktar":20,"barkod":"8691234567890","son_kullanma_tarihi":"2026-12-31","alis_fiyat":18.50,"satis_fiyat":25.90,"tedarikci":"ABC Un Fabrikası","raf_no":"A1","tahmini_gunluk_satis":5.0},
+        {"urun_adi":"Şeker","miktar":5,"birim":"kg","kategori":"Kuru Gıda","min_miktar":10,"barkod":"8691234567891","son_kullanma_tarihi":"2026-05-15","alis_fiyat":22.00,"satis_fiyat":32.50,"tedarikci":"XYZ Şeker","raf_no":"A2","tahmini_gunluk_satis":2.0},
+        {"urun_adi":"Süt","miktar":40,"birim":"litre","kategori":"Süt Ürünleri","min_miktar":15,"barkod":"8691234567892","son_kullanma_tarihi":"2026-05-08","alis_fiyat":12.00,"satis_fiyat":18.90,"tedarikci":"Sütaş","raf_no":"B1","tahmini_gunluk_satis":8.0},
+        {"urun_adi":"Yumurta","miktar":200,"birim":"adet","kategori":"Diğer","min_miktar":30,"barkod":"8691234567893","son_kullanma_tarihi":"2026-05-06","alis_fiyat":2.50,"satis_fiyat":4.50,"tedarikci":"Köy Yumurtası","raf_no":"C1","tahmini_gunluk_satis":30.0},
+        {"urun_adi":"Tereyağı","miktar":25,"birim":"kg","kategori":"Süt Ürünleri","min_miktar":5,"barkod":"8691234567894","son_kullanma_tarihi":"2026-06-20","alis_fiyat":120.00,"satis_fiyat":175.00,"tedarikci":"Sütaş","raf_no":"B2","tahmini_gunluk_satis":3.0}
     ]
 
 def mock_fire_olustur():
@@ -254,6 +213,73 @@ def bugunku_satis():
     bugun = datetime.now().strftime("%Y-%m-%d")
     return sum(s["toplam_tutar"] for s in liste if s["tarih"].startswith(bugun))
 
+# ---------------------------- VERİ BİLİMİ: SATIŞ HIZI ---------------------------
+def urun_gunluk_satis_hizi(urun_adi, varsayilan=1.0):
+    """Son 30 gündeki satış verisinden günlük ortalama satış hızını döndür."""
+    satislar = dosya_oku(SATIS_DOSYASI, [])
+    if not satislar:
+        # satış verisi yoksa kullanıcı tahminini veya varsayılanı döndür
+        for u in st.session_state.stok:
+            if u["urun_adi"] == urun_adi:
+                return u.get("tahmini_gunluk_satis", varsayilan)
+        return varsayilan
+
+    bugun = datetime.now().date()
+    baslangic = bugun - timedelta(days=30)
+    miktarlar = []
+    for s in satislar:
+        try:
+            tarih = datetime.strptime(s["tarih"], "%Y-%m-%d %H:%M:%S").date()
+            if s["urun_adi"] == urun_adi and baslangic <= tarih <= bugun:
+                miktarlar.append(s["miktar"])
+        except: continue
+    if not miktarlar:
+        for u in st.session_state.stok:
+            if u["urun_adi"] == urun_adi:
+                return u.get("tahmini_gunluk_satis", varsayilan)
+        return varsayilan
+    return sum(miktarlar) / len(miktarlar)
+
+# ---------------------------- VERİ BİLİMİ: BİLİMSEL İNDİRİM -----------------------
+def bilimsel_indirim_hesapla(urun, kalan_gun):
+    """Dinamik indirim oranı hesaplar."""
+    if kalan_gun <= 0:
+        # SKT geçmişse çok agresif indirim
+        satis_fiyat = urun.get("satis_fiyat", 10)
+        alis_fiyat = urun.get("alis_fiyat", 5)
+        if satis_fiyat > 0:
+            return min(50, int((satis_fiyat - alis_fiyat) / satis_fiyat * 100))
+        return 50
+
+    q = urun.get("miktar", 0)
+    satis_fiyat = urun.get("satis_fiyat", 0)
+    alis_fiyat = urun.get("alis_fiyat", 0)
+    if satis_fiyat <= 0 or q <= 0:
+        return 0
+
+    m = (satis_fiyat - alis_fiyat) / satis_fiyat  # kar marjı oranı
+    v = urun_gunluk_satis_hizi(urun["urun_adi"], varsayilan=urun.get("tahmini_gunluk_satis", 1.0))
+
+    beklenen_satis = v * kalan_gun
+    stok_fazlasi = q - beklenen_satis  # ne kadarı zamanında satılamayacak?
+
+    if stok_fazlasi <= 0:
+        return 0
+
+    # Temel indirim: stok fazlasının toplam stoğa oranı * kar marjı
+    indirim = (stok_fazlasi / q) * m * 100
+    max_indirim = m * 100 * 0.8  # karın en fazla %80'i indirime gidebilir
+    indirim = min(indirim, max_indirim)
+
+    # Yakınlık bonusu (ne kadar yakınsa o kadar yüksek indirim)
+    if kalan_gun <= 1:
+        indirim = max(indirim, m * 100 * 0.5)
+    elif kalan_gun <= 3:
+        indirim = max(indirim, m * 100 * 0.2)
+
+    return round(indirim, 1)
+
+# ---------------------------- OTURUM YÖNETİMİ -----------------------
 def oturumu_baslat():
     if "stok" not in st.session_state: st.session_state.stok=dosya_oku(STOK_DOSYASI,mock_stok_olustur())
     if "fire" not in st.session_state: st.session_state.fire=dosya_oku(FIRE_DOSYASI,mock_fire_olustur())
@@ -275,7 +301,7 @@ def giris_ekrani():
     col1,col2,col3=st.columns([1,2,1])
     with col2:
         st.markdown('<h1 style="text-align:center; background:linear-gradient(135deg,#F97316,#8B5CF6); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🏪 Market Yönetim</h1>',unsafe_allow_html=True)
-        st.markdown('<p style="text-align:center; color:#E2E8F0;">İnteraktif stok takibi</p>',unsafe_allow_html=True)
+        st.markdown('<p style="text-align:center; color:#E2E8F0;">Akıllı Stok Takibi</p>',unsafe_allow_html=True)
         with st.form("giris",clear_on_submit=False):
             kullanici=st.text_input("👤 Kullanıcı Adı",placeholder="admin")
             sifre=st.text_input("🔒 Şifre",type="password",placeholder="••••")
@@ -311,17 +337,16 @@ def ana_sayfa():
         st.subheader("🚨 Kritik Stoklar")
         for u in kritik[:5]: st.error(f"{guvenli_html(u['urun_adi'])}: {u['miktar']:.2f} {u['birim']}")
     if skt:
-        st.subheader("⏰ Yaklaşan SKT")
-        for u in skt[:5]: st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
-    if lottie_success:
-        st_lottie(lottie_success, height=120, key="welcome")
+        st.subheader("⏰ Yaklaşan SKT (Bilimsel İndirim)")
+        for u in skt[:5]:
+            oneri = bilimsel_indirim_hesapla(u, u['kalan'])
+            st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → Önerilen İndirim: %{oneri}")
 
+# ---------------------------- BARKOD (MOBİL UYUMLU) ------------------
 def barkod_sayfasi():
     st.markdown('<div class="main-header">📱 Barkod Okutma</div>',unsafe_allow_html=True)
     c1,c2=st.columns(2)
     with c1:
-        if lottie_barcode:
-            st_lottie(lottie_barcode, height=150, key="barcode_anim")
         barkod_manuel=st.text_input("🔢 Barkod Numarası",placeholder="Okutun veya yazın...",key="manuel_barkod")
     with c2:
         img_file=st.camera_input("📷 Mobil Kamera")
@@ -330,7 +355,8 @@ def barkod_sayfasi():
         try:
             import cv2, numpy as np
             img=cv2.imdecode(np.asarray(bytearray(img_file.read()),dtype=np.uint8),cv2.IMREAD_COLOR)
-            data,_,_=cv2.QRCodeDetector().detectAndDecode(img)
+            detector = cv2.QRCodeDetector()
+            data,_,_ = detector.detectAndDecode(img)
             if data: barkod=data; st.success(f"✅ Okunan: {barkod}")
             else: st.warning("Barkod algılanamadı.")
         except Exception as e: st.error(f"Kamera hatası: {e}")
@@ -338,35 +364,40 @@ def barkod_sayfasi():
     if aktif:
         bilgi=st.session_state.barkod_db.get(aktif,{})
         urun_adi=bilgi.get("urun_adi","")
-        if urun_adi: st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim','')}) – {guvenli_html(bilgi.get('uretici',''))}")
-        else: st.warning("❓ Yeni barkod.")
+        if urun_adi:
+            st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim','')}) – {guvenli_html(bilgi.get('uretici',''))}")
+        else:
+            st.warning("❓ Yeni barkod. Formu doldurup kaydedin.")
         with st.form("barkod_form"):
             c1,c2=st.columns(2)
             ad=c1.text_input("Ürün Adı *",value=urun_adi)
             miktar=c1.number_input("Miktar",0.01,format="%.2f",value=1.0)
             birim=c2.selectbox("Birim",BIRIMLER,index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0)
             kategori=c2.selectbox("Kategori",KATEGORILER,index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
+            tahmini_gunluk = c1.number_input("Tahmini Günlük Satış", 0.1, format="%.1f", value=bilgi.get("tahmini_gunluk_satis", 1.0))
             skt=c1.date_input("SKT")
             islem=c2.radio("İşlem",["📥 Giriş","📤 Çıkış"],horizontal=True)
             if st.form_submit_button("💾 Kaydet"):
                 if not ad.strip(): st.error("Ad zorunlu")
                 else:
                     if aktif not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[aktif]={"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
+                        st.session_state.barkod_db[aktif]={"urun_adi":ad.strip(),"birim":birim,"kategori":kategori,"tahmini_gunluk_satis":tahmini_gunluk}
                         dosya_yaz(BARKOD_DB_DOSYASI,st.session_state.barkod_db)
                     gercek=miktar if islem=="📥 Giriş" else -miktar
                     for u in st.session_state.stok:
                         if u.get("barkod")==aktif:
                             u["miktar"]+=gercek
                             u["son_kullanma_tarihi"]=skt.strftime("%Y-%m-%d")
+                            u["tahmini_gunluk_satis"] = tahmini_gunluk
                             veriyi_kaydet()
                             st.toast("✅ Güncellendi",icon="✅",duration=5000)
                             st.rerun()
-                    st.session_state.stok.append({"urun_adi":ad.strip(),"miktar":max(0,gercek),"birim":birim,"kategori":kategori,"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"barkod":aktif,"min_miktar":0,"alis_fiyat":0,"satis_fiyat":0})
+                    st.session_state.stok.append({"urun_adi":ad.strip(),"miktar":max(0,gercek),"birim":birim,"kategori":kategori,"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"barkod":aktif,"min_miktar":0,"alis_fiyat":0,"satis_fiyat":0,"tahmini_gunluk_satis":tahmini_gunluk})
                     veriyi_kaydet()
                     st.toast("✅ Eklendi",icon="✅",duration=5000)
                     st.rerun()
 
+# ---------------------------- STOK SAYFASI --------------------------
 def stok_sayfasi():
     st.markdown('<div class="main-header">📦 Stok Yönetimi</div>',unsafe_allow_html=True)
     tab1,tab2,tab3 = st.tabs(["📋 Liste","➕ Ekle","✏️ Düzenle/Sil"])
@@ -388,15 +419,16 @@ def stok_sayfasi():
             alis = c2.number_input("Alış Fiyatı", 0.0, format="%.2f")
             satis = c3.number_input("Satış Fiyatı", 0.0, format="%.2f")
             min_m = c1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
-            skt = c2.date_input("SKT")
-            raf = c3.text_input("Raf")
+            tahmini_gunluk = c2.number_input("Tahmini Günlük Satış", 0.1, format="%.1f", value=1.0)
+            skt = c3.date_input("SKT")
+            raf = c1.text_input("Raf")
             if st.form_submit_button("💾 Kaydet"):
                 if not ad.strip(): st.error("Ad zorunlu")
                 else:
                     if barkod and barkod not in st.session_state.barkod_db:
                         st.session_state.barkod_db[barkod] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
                         dosya_yaz(BARKOD_DB_DOSYASI,st.session_state.barkod_db)
-                    st.session_state.stok.append({"urun_adi":ad.strip(),"miktar":miktar,"birim":birim,"kategori":kategori,"min_miktar":min_m,"barkod":barkod.strip(),"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"alis_fiyat":alis,"satis_fiyat":satis,"raf_no":raf.strip()})
+                    st.session_state.stok.append({"urun_adi":ad.strip(),"miktar":miktar,"birim":birim,"kategori":kategori,"min_miktar":min_m,"barkod":barkod.strip(),"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"alis_fiyat":alis,"satis_fiyat":satis,"raf_no":raf.strip(),"tahmini_gunluk_satis":tahmini_gunluk})
                     veriyi_kaydet()
                     st.toast("✅ Eklendi",icon="✅",duration=5000)
                     st.success(f"🎉 {guvenli_html(ad)} stoğa eklendi!")
@@ -418,14 +450,15 @@ def stok_sayfasi():
                 yeni_alis = c2.number_input("Alış Fiyatı", value=float(urun.get("alis_fiyat",0)), format="%.2f")
                 yeni_satis = c3.number_input("Satış Fiyatı", value=float(urun.get("satis_fiyat",0)), format="%.2f")
                 yeni_min = c1.number_input("Min Stok", value=float(urun.get("min_miktar",0)), format="%.2f")
+                yeni_tahmini = c2.number_input("Tahmini Günlük Satış", 0.1, format="%.1f", value=float(urun.get("tahmini_gunluk_satis",1.0)))
                 try: skt = datetime.strptime(urun.get("son_kullanma_tarihi","2026-01-01"),"%Y-%m-%d")
                 except: skt = datetime.now()
-                yeni_skt = c2.date_input("SKT", value=skt)
-                yeni_raf = c3.text_input("Raf", value=urun.get("raf_no",""))
+                yeni_skt = c3.date_input("SKT", value=skt)
+                yeni_raf = c1.text_input("Raf", value=urun.get("raf_no",""))
                 if st.form_submit_button("💾 Güncelle"):
                     if not yeni_ad.strip(): st.error("Ad zorunlu")
                     else:
-                        st.session_state.stok[idx] = {"urun_adi":yeni_ad.strip(),"miktar":yeni_miktar,"birim":yeni_birim,"kategori":yeni_kategori,"min_miktar":yeni_min,"barkod":urun.get("barkod",""),"son_kullanma_tarihi":yeni_skt.strftime("%Y-%m-%d"),"alis_fiyat":yeni_alis,"satis_fiyat":yeni_satis,"tedarikci":urun.get("tedarikci",""),"raf_no":yeni_raf.strip(),"kdv_oran":urun.get("kdv_oran",8)}
+                        st.session_state.stok[idx] = {"urun_adi":yeni_ad.strip(),"miktar":yeni_miktar,"birim":yeni_birim,"kategori":yeni_kategori,"min_miktar":yeni_min,"barkod":urun.get("barkod",""),"son_kullanma_tarihi":yeni_skt.strftime("%Y-%m-%d"),"alis_fiyat":yeni_alis,"satis_fiyat":yeni_satis,"tedarikci":urun.get("tedarikci",""),"raf_no":yeni_raf.strip(),"kdv_oran":urun.get("kdv_oran",8),"tahmini_gunluk_satis":yeni_tahmini}
                         veriyi_kaydet()
                         st.toast("✅ Güncellendi",icon="✏️",duration=5000)
                         st.rerun()
@@ -439,6 +472,7 @@ def stok_sayfasi():
                     st.rerun()
         else: st.info("Ürün yok.")
 
+# ---------------------------- SATIŞ --------------------------
 def satis_sayfasi():
     st.markdown('<div class="main-header">💰 Satış (POS)</div>',unsafe_allow_html=True)
     satilabilir = [u for u in st.session_state.stok if u["miktar"]>0]
@@ -475,6 +509,7 @@ def satis_sayfasi():
             st.toast(f"✅ Satış: {toplam:.2f} ₺",icon="💵",duration=5000)
             st.rerun()
 
+# ---------------------------- SİPARİŞ -----------------------
 def siparis_sayfasi():
     st.markdown('<div class="main-header">🔥 Sipariş Panosu</div>',unsafe_allow_html=True)
     tab1,tab2=st.tabs(["📋 Liste","➕ Ekle"])
@@ -503,6 +538,7 @@ def siparis_sayfasi():
                 st.toast("Sipariş eklendi",icon="🔥",duration=5000)
                 st.rerun()
 
+# ---------------------------- FİRE ANALİZİ --------------------------
 def fire_analizi():
     st.markdown('<div class="main-header">📉 Fire Analizi</div>',unsafe_allow_html=True)
     if st.session_state.fire:
@@ -514,6 +550,7 @@ def fire_analizi():
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Fire kaydı yok.")
 
+# ---------------------------- SATIŞ RAPORU ---------------------------
 def satis_raporu():
     st.markdown('<div class="main-header">📊 Satış Raporu</div>',unsafe_allow_html=True)
     satislar = dosya_oku(SATIS_DOSYASI, [])
@@ -549,6 +586,7 @@ def satis_raporu():
             fig2=px.bar(rpr, x="urun_adi", y="Adet", title="Satış Adedi", color_discrete_sequence=["#10b981"])
             st.plotly_chart(fig2, use_container_width=True)
 
+# ---------------------------- YEDEKLEME -----------------------------
 def yedekleme_sayfasi():
     st.markdown('<div class="main-header">💾 Yedekleme</div>',unsafe_allow_html=True)
     c1,c2=st.columns(2)
@@ -570,6 +608,7 @@ def veriyi_kaydet():
     dosya_yaz(STOK_DOSYASI, st.session_state.stok)
     dosya_yaz(FIRE_DOSYASI, st.session_state.fire)
 
+# ---------------------------- ANA UYGULAMA --------------------------
 def main():
     st.set_page_config(page_title="Market Yönetim", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
     enerjik_css()
@@ -581,7 +620,7 @@ def main():
         return
     with st.sidebar:
         st.markdown('<h2 style="color:white;">🏪 Market</h2>',unsafe_allow_html=True)
-        st.markdown('<p style="color:#F97316;">v2.0</p>',unsafe_allow_html=True)
+        st.markdown('<p style="color:#F97316;">v2.0 Veri Zekası</p>',unsafe_allow_html=True)
         if st.session_state.current_user:
             st.markdown(f'<div style="background:rgba(249,115,22,0.2);border-radius:12px;padding:12px;"><p style="color:white;">👤 {st.session_state.current_user.get("ad","Kullanıcı")}</p></div>',unsafe_allow_html=True)
         sayfa = st.radio("Menü", ["🏠 Ana Panel","📱 Barkod","💵 Satış","📦 Stok","🔥 Sipariş","📉 Fire Analizi","📊 Satış Raporu","💾 Yedekleme"], label_visibility="collapsed")
