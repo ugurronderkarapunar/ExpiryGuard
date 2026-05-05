@@ -1,0 +1,12 @@
+{
+  "kullanici_adi": "admin",
+  "sifre": "1234",
+  "oturum_suresi_dk": 30,
+  "varsayilan_min_stok": 10,
+  "kategoriler": ["Kuru Gıda", "Süt Ürünleri", "İçecek", "Temizlik", "Diğer"],
+  "dosya_yollari": {
+    "stok": "stok.json",
+    "fire": "fire.json",
+    "hareket": "hareket.json"
+  }
+}
