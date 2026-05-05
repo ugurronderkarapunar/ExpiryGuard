@@ -165,7 +165,6 @@ def hareket_ekle(kullanici, islem, urun_adi, detay=""):
         hareketler = hareketler[-1000:]
     dosya_yaz(HAREKET_DOSYASI, hareketler)
 
-# ---------------------------- SATIS KAYDI ---------------------------
 def satis_kaydet(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, kullanici):
     satis = {
         "id": str(uuid.uuid4())[:8],
@@ -184,8 +183,7 @@ def satis_kaydet(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, kullanici):
 def bugunku_satis_toplami():
     satislar = dosya_oku(SATIS_DOSYASI, [])
     bugun = datetime.now().strftime("%Y-%m-%d")
-    toplam = sum(s["toplam_tutar"] for s in satislar if s["tarih"].startswith(bugun))
-    return toplam
+    return sum(s["toplam_tutar"] for s in satislar if s["tarih"].startswith(bugun))
 
 # ---------------------------- OTURUM YÖNETİMİ -----------------------
 def oturumu_baslat():
@@ -256,10 +254,8 @@ def ana_sayfa():
     col2.metric("⚠️ Kritik Stok", len(kritik))
     col3.metric("⏰ SKT Yaklaşan", len(skt_list))
     col4.metric("💰 Stok Değeri", f"{sum(u['miktar']*u.get('satis_fiyat',0) for u in st.session_state.stok):,.2f} ₺")
-
     col5, col6 = st.columns(2)
     col5.metric("🧾 Bugünkü Satış", f"{bugunku_satis_toplami():,.2f} ₺")
-    
     if kritik:
         st.subheader("🚨 Kritik Stoklar")
         for u in kritik[:5]: st.error(f"{u['urun_adi']}: {u['miktar']:.2f} {u['birim']}")
@@ -272,7 +268,6 @@ def barkod_sayfasi():
     st.header("📱 Barkod Okutma (Giriş/Çıkış)")
     barkod_manuel = st.text_input("🔢 Barkod Numarası", placeholder="Okutun veya yazın...", key="manuel_barkod")
     img_file = st.camera_input("📷 Mobil Kamera")
-    
     barkod = None
     if img_file is not None:
         try:
@@ -288,7 +283,6 @@ def barkod_sayfasi():
                 st.warning("Barkod algılanamadı.")
         except Exception as e:
             st.error(f"Kamera hatası: {e}")
-    
     aktif_barkod = barkod_manuel or barkod
     if aktif_barkod:
         bilgi = st.session_state.barkod_db.get(aktif_barkod, {})
@@ -297,7 +291,6 @@ def barkod_sayfasi():
             st.info(f"📦 **{urun_adi}** ({bilgi.get('birim','')}) – {bilgi.get('uretici','')}")
         else:
             st.warning("❓ Yeni barkod. Formu doldurup kaydedin.")
-        
         with st.form("barkod_form"):
             col1, col2 = st.columns(2)
             ad = col1.text_input("Ürün Adı *", value=urun_adi)
@@ -308,7 +301,6 @@ def barkod_sayfasi():
                                       index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
             skt = col1.date_input("SKT", min_value=datetime.now().date())
             islem = col2.radio("İşlem", ["📥 Stok Giriş", "📤 Stok Çıkış"], horizontal=True)
-            
             if st.form_submit_button("💾 Kaydet"):
                 if not ad.strip():
                     st.error("Ürün adı zorunlu!")
@@ -362,6 +354,7 @@ def stok_sayfasi():
             min_miktar = col1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
             skt = col2.date_input("SKT", min_value=datetime.now().date())
             raf_no = col3.text_input("Raf No")
+            eklendi_mesaj = st.empty()
             if st.form_submit_button("💾 Kaydet"):
                 if not urun_adi.strip():
                     st.error("Ürün adı zorunlu")
@@ -376,19 +369,20 @@ def stok_sayfasi():
                         "alis_fiyat": alis_fiyat, "satis_fiyat": satis_fiyat, "raf_no": raf_no.strip()
                     })
                     veriyi_kaydet()
-                    st.toast("✅ Eklendi", icon="✅")
+                    st.toast("✅ Ürün eklendi", icon="✅")
+                    eklendi_mesaj.success(f"🎉 {urun_adi} başarıyla stoğa eklendi!")
+                    import time
+                    time.sleep(1)
                     st.rerun()
 
-# ---------------------------- SATIŞ SAYFASI --------------------------
+# ---------------------------- SATIŞ SAYFASI (YENİ) -------------------
 def satis_sayfasi():
     st.header("💰 Satış (POS)")
-    # Ürün seçimi (stokta miktarı >0 olanlar)
     satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
     if not satilabilir:
         st.warning("Satılabilecek stokta ürün bulunmuyor.")
         return
     
-    # Ürün listesi (görünen ad + fiyat)
     urun_secenekleri = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat',0):.2f} ₺)" for u in satilabilir]
     secili_str = st.selectbox("Ürün Seçin", urun_secenekleri)
     secili_idx = urun_secenekleri.index(secili_str)
@@ -403,6 +397,9 @@ def satis_sayfasi():
     with col2:
         st.metric("Birim Fiyat", f"{birim_fiyat:.2f} ₺")
     
+    kalan_stok = mevcut_stok - miktar
+    st.metric("📦 Kalan Stok (satış sonrası)", f"{kalan_stok:.2f} {secili_urun['birim']}")
+    
     toplam_tutar = miktar * birim_fiyat
     st.markdown(f"### 🧾 Toplam: {toplam_tutar:.2f} ₺")
     
@@ -410,12 +407,27 @@ def satis_sayfasi():
         if miktar <= 0 or miktar > mevcut_stok:
             st.error("Geçersiz miktar!")
         else:
-            # Stoktan düş
             for urun in st.session_state.stok:
                 if urun["urun_adi"] == secili_urun["urun_adi"] and urun.get("barkod") == secili_urun.get("barkod"):
-                    urun["miktar"] -= miktar
+                    urun["miktar"] = round(urun["miktar"] - miktar, 2)
+                    yeni_miktar = urun["miktar"]
+                    min_m = urun.get("min_miktar", 0)
+                    # Stok kritik altına düşerse otomatik fire ekle
+                    if yeni_miktar <= min_m and min_m > 0:
+                        zaten_varmi = any(f["urun_adi"] == urun["urun_adi"] and f["durum"] == "Bekliyor" for f in st.session_state.fire)
+                        if not zaten_varmi:
+                            st.session_state.fire.append({
+                                "urun_adi": urun["urun_adi"],
+                                "miktar": min_m - yeni_miktar + 1,
+                                "birim": urun["birim"],
+                                "aciliyet": "🔥 Yüksek",
+                                "tedarikci": urun.get("tedarikci", ""),
+                                "durum": "Bekliyor",
+                                "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
+                            })
+                            st.warning(f"⚠️ {urun['urun_adi']} kritik stok altına düştü! Otomatik sipariş fişi eklendi.")
                     break
-            # Satış kaydı ekle
+            
             satis_kaydet(secili_urun["urun_adi"], secili_urun["birim"], miktar, birim_fiyat, toplam_tutar,
                          st.session_state.current_user["kullanici_adi"] if st.session_state.current_user else "kasiyer")
             hareket_ekle(st.session_state.current_user["kullanici_adi"], "Satış", secili_urun["urun_adi"],
