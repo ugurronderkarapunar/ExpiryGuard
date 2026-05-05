@@ -244,24 +244,32 @@ def barkod_sayfasi():
         key="manuel_barkod"
     )
     
-    # ---- Mobil Kamera ----
+    # ---- Mobil Kamera (OpenCV ile QR/barkod) ----
     st.subheader("📷 Mobil Kamera")
     img_file = st.camera_input("Kamerayı açın ve barkodu gösterin")
     
     barkod = None
     if img_file is not None:
         try:
-            from pyzbar.pyzbar import decode
-            from PIL import Image
-            img = Image.open(img_file)
-            decoded = decode(img)
-            if decoded:
-                barkod = decoded[0].data.decode("utf-8")
+            import cv2
+            import numpy as np
+            
+            file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            
+            # QR kod detektörü (OpenCV 4.5+)
+            detector = cv2.QRCodeDetector()
+            data, bbox, _ = detector.detectAndDecode(img)
+            
+            if data:
+                barkod = data
                 st.success(f"✅ Okunan Barkod: {barkod}")
             else:
-                st.warning("Barkod algılanamadı, lütfen net bir şekilde tekrar deneyin.")
+                st.warning("QR kod veya barkod algılanamadı. Lütfen net bir şekilde tekrar deneyin veya manuel girişi kullanın.")
+        except ImportError:
+            st.error("Gerekli kütüphaneler yüklenmemiş. Lütfen requirements.txt'yi güncelleyin.")
         except Exception as e:
-            st.error(f"Kamera hatası: {e}")
+            st.error(f"Kamera işleme hatası: {e}")
     
     # Aktif barkod (önce manuel, sonra kamera)
     aktif_barkod = barkod_manuel or barkod
@@ -288,7 +296,6 @@ def barkod_sayfasi():
                 if not ad.strip():
                     st.error("Ürün adı zorunlu!")
                 else:
-                    # Barkod DB'ye ekle
                     if aktif_barkod not in st.session_state.barkod_db:
                         st.session_state.barkod_db[aktif_barkod] = {
                             "urun_adi": ad.strip(),
@@ -298,7 +305,6 @@ def barkod_sayfasi():
                         dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
                     
                     gercek_miktar = miktar if islem == "📥 Stok Giriş" else -miktar
-                    # Stokta güncelle
                     for urun in st.session_state.stok:
                         if urun.get("barkod") == aktif_barkod:
                             urun["miktar"] += gercek_miktar
@@ -306,7 +312,7 @@ def barkod_sayfasi():
                             veriyi_kaydet()
                             st.toast("✅ Güncellendi", icon="✅")
                             st.rerun()
-                    # Yeni kayıt
+                    
                     st.session_state.stok.append({
                         "urun_adi": ad.strip(),
                         "miktar": max(0, gercek_miktar),
