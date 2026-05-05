@@ -68,6 +68,20 @@ def dosya_yaz(dosya_adi, veri):
         st.error(f"Dosyaya yazılamadı: {dosya_adi}")
         return False
 
+# ---------------------------- VERİ GEÇİŞ KONTROL --------------------
+def veri_gecis_kontrol():
+    """Eski veri formatını yeni alanlarla günceller."""
+    degisti = False
+    for urun in st.session_state.stok:
+        if "kategori" not in urun:
+            urun["kategori"] = "Diğer"
+            degisti = True
+        if "min_miktar" not in urun:
+            urun["min_miktar"] = 0
+            degisti = True
+    if degisti:
+        veriyi_kaydet()
+
 # ---------------------------- MOCK VERİ -----------------------------
 def mock_stok_olustur():
     return [
@@ -110,6 +124,7 @@ def oturumu_baslat():
         st.session_state.last_activity = datetime.now()
     if "config" not in st.session_state:
         st.session_state.config = config
+    veri_gecis_kontrol()  # eski verileri güncelle
 
 def oturum_kontrol():
     if st.session_state.authenticated:
@@ -144,9 +159,7 @@ def cikis_yap():
 # ---------------------------- ANA SAYFA (KPI) ---------------------
 def ana_sayfa():
     st.header("📊 Yönetim Paneli")
-    # Kritik stok eşiği kontrolü
-    kritik_esik = 10  # varsayılan, istenirse config'ten alınabilir
-    kritik_urunler = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u["min_miktar"]]
+    kritik_urunler = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u.get("min_miktar", 0)]
     toplam_urun = len(st.session_state.stok)
     acik_siparis = len(st.session_state.fire)
     
@@ -167,7 +180,6 @@ def stok_sayfasi():
     
     with tab1:
         st.subheader("Stok Listesi")
-        # Arama ve filtre
         arama = st.text_input("Ürün Ara", key="stok_arama")
         kategori_sec = st.selectbox("Kategori Filtrele", ["Tümü"] + KATEGORILER, key="stok_kategori")
         
@@ -177,7 +189,6 @@ def stok_sayfasi():
                 df = df[df["kategori"] == kategori_sec]
             if arama:
                 df = df[df["urun_adi"].str.contains(arama, case=False)]
-            # Renklendirilmiş tablo (kritik stok satırları kırmızı)
             def highlight_critical(row):
                 min_m = row.get("min_miktar", 0)
                 if min_m > 0 and row["miktar"] <= min_m:
@@ -229,10 +240,19 @@ def stok_sayfasi():
             with st.form("duzenle_form"):
                 yeni_ad = st.text_input("Ürün Adı", value=urun["urun_adi"])
                 yeni_miktar = st.number_input("Miktar", value=float(urun["miktar"]), min_value=0.0)
-                yeni_birim = st.selectbox("Birim", ["kg", "litre", "adet", "paket", "gram", "koli"],
-                                          index=["kg", "litre", "adet", "paket", "gram", "koli"].index(urun["birim"]) if urun["birim"] in ["kg", "litre", "adet", "paket", "gram", "koli"] else 0)
-                yeni_kategori = st.selectbox("Kategori", KATEGORILER,
-                                            index=KATEGORILER.index(urun["kategori"]) if urun["kategori"] in KATEGORILER else 0)
+                birimler = ["kg", "litre", "adet", "paket", "gram", "koli"]
+                mevcut_birim = urun.get("birim", "kg")
+                try:
+                    birim_index = birimler.index(mevcut_birim)
+                except ValueError:
+                    birim_index = 0
+                yeni_birim = st.selectbox("Birim", birimler, index=birim_index)
+                mevcut_kategori = urun.get("kategori", "Diğer")
+                try:
+                    kat_index = KATEGORILER.index(mevcut_kategori)
+                except ValueError:
+                    kat_index = 0
+                yeni_kategori = st.selectbox("Kategori", KATEGORILER, index=kat_index)
                 yeni_min = st.number_input("Min. Stok", value=float(urun.get("min_miktar", 0)), min_value=0.0)
                 
                 col1, col2, col3 = st.columns([2,1,1])
@@ -253,7 +273,6 @@ def stok_sayfasi():
                             st.toast("Ürün güncellendi.", icon="✏️")
                             st.rerun()
                 with col2:
-                    # Silme onayı expander içinde
                     with st.expander("🗑️ Sil", expanded=False):
                         st.warning("Bu işlem geri alınamaz!")
                         onay = st.checkbox("Eminim, silmek istiyorum.", key=f"sil_onay_{idx}")
@@ -300,7 +319,6 @@ def stok_sayfasi():
             except Exception as e:
                 st.error(f"CSV yüklenirken hata: {e}")
     
-    # Excel dışa aktarma
     if st.session_state.stok:
         st.download_button(
             "📊 Stok Listesini Excel Olarak İndir",
@@ -320,7 +338,6 @@ def siparis_sayfasi():
         if not df.empty:
             if arama:
                 df = df[df["urun_adi"].str.contains(arama, case=False)]
-            # Aciliyet badge'lerini HTML ile göster
             def format_aciliyet(val):
                 if "Yüksek" in val:
                     return '🔥 <span style="color:red; font-weight:bold">Yüksek</span>'
@@ -338,7 +355,6 @@ def siparis_sayfasi():
             veriyi_kaydet()
             st.toast("Siparişler mock verilerle sıfırlandı.", icon="🔄")
             st.rerun()
-        # Grafik
         st.subheader("Aciliyet Dağılımı")
         if not df.empty:
             fig = px.bar(df, x='aciliyet', title='Sipariş Aciliyet Durumları')
@@ -373,8 +389,13 @@ def siparis_sayfasi():
             with st.form("siparis_duzenle_form"):
                 yeni_ad = st.text_input("Ürün Adı", value=siparis["urun_adi"])
                 yeni_adet = st.number_input("Adet", value=int(siparis["adet"]), min_value=1)
-                yeni_aciliyet = st.selectbox("Aciliyet", ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"],
-                                            index=["🔥 Yüksek", "⚡ Orta", "✅ Düşük"].index(siparis["aciliyet"]) if siparis["aciliyet"] in ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"] else 0)
+                aciliyetler = ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"]
+                mevcut_aci = siparis.get("aciliyet", "✅ Düşük")
+                try:
+                    aci_index = aciliyetler.index(mevcut_aci)
+                except ValueError:
+                    aci_index = 2
+                yeni_aciliyet = st.selectbox("Aciliyet", aciliyetler, index=aci_index)
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.form_submit_button("💾 Kaydet"):
@@ -469,7 +490,6 @@ def main():
         if st.button("🚪 Çıkış Yap"):
             cikis_yap()
     
-    # Sayfa yönlendirme
     if sayfa == "🏠 Ana Panel":
         ana_sayfa()
     elif sayfa == "📦 Stok Yönetimi":
