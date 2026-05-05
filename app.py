@@ -324,6 +324,7 @@ def barkod_sayfasi():
 def stok_sayfasi():
     st.header("📦 Stok Yönetimi")
     tab1, tab2, tab3 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil"])
+    
     with tab1:
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
@@ -332,6 +333,7 @@ def stok_sayfasi():
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
         else:
             st.info("Henüz ürün yok.")
+    
     with tab2:
         st.subheader("Yeni Ürün Ekle")
         with st.form("manuel_ekle"):
@@ -366,6 +368,7 @@ def stok_sayfasi():
                     st.toast("✅ Ürün eklendi", icon="✅", duration=5000)
                     st.success(f"🎉 {urun_adi} başarıyla stoğa eklendi!")
                     st.rerun()
+    
     with tab3:
         st.subheader("Ürün Düzenle veya Sil")
         if st.session_state.stok:
@@ -373,6 +376,8 @@ def stok_sayfasi():
             secili = st.selectbox("Ürün Seç", urun_listesi, key="duzenle_sec")
             idx = urun_listesi.index(secili)
             urun = st.session_state.stok[idx]
+            
+            # ----------------- GÜNCELLEME FORMU -----------------
             with st.form("duzenle_form"):
                 col1, col2, col3 = st.columns(3)
                 yeni_ad = col1.text_input("Ürün Adı", value=urun["urun_adi"])
@@ -397,32 +402,34 @@ def stok_sayfasi():
                     skt = datetime.now()
                 yeni_skt = col2.date_input("SKT", value=skt)
                 yeni_raf = col3.text_input("Raf No", value=urun.get("raf_no", ""))
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.form_submit_button("💾 Güncelle"):
-                        if not yeni_ad.strip():
-                            st.error("Ürün adı boş olamaz!")
-                        else:
-                            st.session_state.stok[idx] = {
-                                "urun_adi": yeni_ad.strip(), "miktar": yeni_miktar, "birim": yeni_birim,
-                                "kategori": yeni_kategori, "min_miktar": yeni_min,
-                                "barkod": urun.get("barkod", ""), "son_kullanma_tarihi": yeni_skt.strftime("%Y-%m-%d"),
-                                "alis_fiyat": yeni_alis, "satis_fiyat": yeni_satis,
-                                "tedarikci": urun.get("tedarikci", ""), "raf_no": yeni_raf.strip(),
-                                "kdv_oran": urun.get("kdv_oran", 8)
-                            }
-                            veriyi_kaydet()
-                            st.toast("✅ Ürün güncellendi", icon="✏️", duration=5000)
-                            st.rerun()
-                with col_btn2:
-                    with st.popover("🗑️ Sil"):
-                        st.warning("Bu işlem geri alınamaz!")
-                        if st.button("⚠️ Silmeyi Onayla", key=f"pop_sil_{idx}"):
-                            silinen = st.session_state.stok.pop(idx)
-                            veriyi_kaydet()
-                            hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"], "Ürün stoğu silindi")
-                            st.toast(f"🗑️ {silinen['urun_adi']} silindi", icon="🗑️", duration=5000)
-                            st.rerun()
+                
+                # Sadece güncelleme butonu formda
+                if st.form_submit_button("💾 Güncelle"):
+                    if not yeni_ad.strip():
+                        st.error("Ürün adı boş olamaz!")
+                    else:
+                        st.session_state.stok[idx] = {
+                            "urun_adi": yeni_ad.strip(), "miktar": yeni_miktar, "birim": yeni_birim,
+                            "kategori": yeni_kategori, "min_miktar": yeni_min,
+                            "barkod": urun.get("barkod", ""), "son_kullanma_tarihi": yeni_skt.strftime("%Y-%m-%d"),
+                            "alis_fiyat": yeni_alis, "satis_fiyat": yeni_satis,
+                            "tedarikci": urun.get("tedarikci", ""), "raf_no": yeni_raf.strip(),
+                            "kdv_oran": urun.get("kdv_oran", 8)
+                        }
+                        veriyi_kaydet()
+                        st.toast("✅ Ürün güncellendi", icon="✏️", duration=5000)
+                        st.rerun()
+            
+            # ----------------- SİLME POPOVER'I (FORM DIŞINDA) -----------------
+            # Silme butonu formun dışında, popover içinde
+            with st.popover("🗑️ Sil"):
+                st.warning("Bu işlem geri alınamaz!")
+                if st.button("⚠️ Silmeyi Onayla", key=f"pop_sil_{idx}"):
+                    silinen = st.session_state.stok.pop(idx)
+                    veriyi_kaydet()
+                    hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"], "Ürün stoğu silindi")
+                    st.toast(f"🗑️ {silinen['urun_adi']} silindi", icon="🗑️", duration=5000)
+                    st.rerun()
         else:
             st.info("Düzenlenecek ürün yok.")
 
