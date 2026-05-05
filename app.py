@@ -3,13 +3,11 @@ import json
 import os
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import logging
 from io import BytesIO
 import hashlib
 import uuid
-import base64
 
 # ---------------------------- LOGLAMA --------------------------------
 logging.basicConfig(
@@ -69,147 +67,100 @@ ROLLER              = config.get("roller", {"patron": ["tümü"], "kasiyer": ["b
 OTURUM_SURESI       = config.get("oturum_suresi_dk", 30)
 SKT_UYARI_GUN       = config.get("skt_uyari_gun", 3)
 
-# ---------------------------- MODERN CSS STİLİ ----------------------
+# ---------------------------- MODERN DARK CSS ----------------------
 def modern_css():
     st.markdown("""
     <style>
-        /* Genel stiller */
-        .main-header {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #1E293B;
-            margin-bottom: 1rem;
-            border-bottom: 3px solid #F59E0B;
-            padding-bottom: 0.5rem;
+        .stApp {
+            background-color: #0F172A;
         }
-        
-        /* Kart stilleri */
-        .metric-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 15px;
-            padding: 20px;
-            color: white;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-            margin: 10px 0;
-            transition: transform 0.3s;
+        .main {
+            background-color: #0F172A;
+            color: #E2E8F0;
         }
-        .metric-card:hover {
-            transform: translateY(-5px);
+        header[data-testid="stHeader"] {
+            background-color: #1E293B;
         }
-        
-        .metric-card.warning {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        .stSidebar {
+            background-color: #1E293B;
         }
-        
-        .metric-card.success {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        .stMetric {
+            background-color: #1E293B;
+            border-radius: 12px;
+            padding: 16px;
+            color: #F1F5F9;
         }
-        
-        .metric-card.info {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-        }
-        
-        .metric-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
-            margin-bottom: 5px;
-        }
-        
-        .metric-value {
-            font-size: 2rem;
-            font-weight: bold;
-        }
-        
-        /* Buton stilleri */
         .stButton > button {
-            border-radius: 10px;
+            border-radius: 8px;
             font-weight: 600;
+            background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+            color: white;
+            border: none;
             transition: all 0.3s;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(59,130,246,0.3);
         }
         .stButton > button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 8px rgba(0,0,0,0.15);
+            box-shadow: 0 6px 20px rgba(59,130,246,0.5);
         }
-        
-        /* Sidebar stilleri */
-        .sidebar .sidebar-content {
-            background: linear-gradient(180deg, #1E293B 0%, #2D3748 100%);
-            color: white;
+        .stTextInput > div > div > input,
+        .stSelectbox > div > div > select,
+        .stNumberInput > div > div > input {
+            background-color: #1E293B;
+            color: #E2E8F0;
+            border: 1px solid #475569;
+            border-radius: 8px;
         }
-        
-        /* Tablo stilleri */
         .dataframe {
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            background-color: #1E293B;
+            color: #E2E8F0;
+            border-radius: 12px;
         }
-        
-        /* Uyarı kartları */
+        .dataframe th {
+            background-color: #334155;
+            color: #F1F5F9;
+        }
+        .dataframe td {
+            background-color: #1E293B;
+            color: #CBD5E1;
+        }
+        .custom-container {
+            background: #1E293B;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            margin: 12px 0;
+            border: 1px solid #334155;
+        }
+        .main-header {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #F1F5F9;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #3B82F6;
+            padding-bottom: 0.5rem;
+        }
         .alert-card {
-            border-radius: 10px;
-            padding: 15px;
+            border-radius: 12px;
+            padding: 16px;
             margin: 10px 0;
-            border-left: 5px solid;
+            border-left: 4px solid;
         }
-        .alert-warning {
-            background: #FEF3C7;
-            border-color: #F59E0B;
-            color: #92400E;
+        a {
+            color: #60A5FA;
         }
-        .alert-danger {
-            background: #FEE2E2;
-            border-color: #EF4444;
-            color: #991B1B;
+        .stToast {
+            background-color: #1E293B !important;
+            color: #F1F5F9 !important;
         }
-        .alert-success {
-            background: #D1FAE5;
-            border-color: #10B981;
-            color: #065F46;
-        }
-        
-        /* Progress bar özelleştirme */
         .stProgress > div > div {
             background: linear-gradient(90deg, #F59E0B, #EF4444);
             border-radius: 10px;
         }
-        
-        /* Özel container */
-        .custom-container {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            margin: 10px 0;
+        .st-emotion-cache-1wivap2 {
+            background-color: #1E293B;
         }
     </style>
-    """, unsafe_allow_html=True)
-
-# ---------------------------- YARDIMCI FONKSİYONLAR -----------------
-def progress_bar(value, max_value, label=""):
-    """Stok seviyesi için modern progress bar"""
-    percent = min(value / max_value * 100, 100) if max_value > 0 else 0
-    st.progress(percent / 100)
-    st.caption(f"{label}: {value:.2f} / {max_value:.2f}")
-
-def metric_card(label, value, icon="📦", card_type="default"):
-    """Modern metrik kartı"""
-    colors = {
-        "default": "#667eea",
-        "warning": "#f5576c",
-        "success": "#4facfe",
-        "info": "#43e97b",
-        "danger": "#EF4444"
-    }
-    color = colors.get(card_type, "#667eea")
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, {color} 0%, {color}99 100%); 
-                border-radius: 15px; padding: 20px; color: white; 
-                box-shadow: 0 10px 20px rgba(0,0,0,0.1); margin: 10px 0;">
-        <div style="font-size: 2rem; margin-bottom: 10px;">{icon}</div>
-        <div style="font-size: 0.9rem; opacity: 0.9;">{label}</div>
-        <div style="font-size: 1.8rem; font-weight: bold;">{value}</div>
-    </div>
     """, unsafe_allow_html=True)
 
 # ---------------------------- DOSYA İŞLEMLERİ -----------------------
@@ -361,17 +312,14 @@ def oturum_kontrol():
 def giris_ekrani():
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.markdown('<h1 style="text-align: center; color: #1E293B;">🏪 Market Yönetim Sistemi</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="text-align: center; color: #64748B;">Stok takibinizi modernleştirin</p>', unsafe_allow_html=True)
-        
+        st.markdown('<h1 style="text-align: center; color: #F1F5F9;">🏪 Market Yönetim Sistemi</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; color: #94A3B8;">Stok takibinizi modernleştirin</p>', unsafe_allow_html=True)
         with st.form("giris", clear_on_submit=False):
             kullanici = st.text_input("👤 Kullanıcı Adı", placeholder="admin")
             sifre = st.text_input("🔒 Şifre", type="password", placeholder="••••")
-            
             col_btn1, col_btn2, col_btn3 = st.columns([1,2,1])
             with col_btn2:
                 giris_btn = st.form_submit_button("🚀 Giriş Yap", use_container_width=True)
-            
             if giris_btn:
                 sifre_hash = hashlib.sha256(sifre.encode()).hexdigest()
                 for k in st.session_state.kullanicilar:
@@ -386,10 +334,9 @@ def cikis_yap():
     st.session_state.authenticated = False
     st.rerun()
 
-# ---------------------------- ANA SAYFA (MODERN KPI) -----------------
+# ---------------------------- ANA SAYFA --------------------------
 def ana_sayfa():
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
-    
     kritik = [u for u in st.session_state.stok if u.get("min_miktar",0)>0 and u["miktar"]<=u["min_miktar"]]
     skt_list=[]
     bugun=datetime.now().date()
@@ -400,77 +347,32 @@ def ana_sayfa():
                 k=(datetime.strptime(s,"%Y-%m-%d").date()-bugun).days
                 if 0<=k<=SKT_UYARI_GUN: skt_list.append({**u,"kalan":k})
             except: pass
-    
-    # Metrik kartları
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        metric_card("📦 Toplam Ürün", len(st.session_state.stok), icon="📦", card_type="info")
-    with col2:
-        metric_card("⚠️ Kritik Stok", len(kritik), icon="🚨", card_type="warning")
-    with col3:
-        metric_card("⏰ SKT Yaklaşan", len(skt_list), icon="🔥", card_type="danger")
-    with col4:
-        metric_card("💰 Stok Değeri", f"{sum(u['miktar']*u.get('satis_fiyat',0) for u in st.session_state.stok):,.0f} ₺", icon="💎", card_type="default")
-    
+    col1,col2,col3,col4=st.columns(4)
+    col1.metric("📦 Ürün Çeşidi", len(st.session_state.stok))
+    col2.metric("⚠️ Kritik Stok", len(kritik))
+    col3.metric("⏰ SKT Yaklaşan", len(skt_list))
+    col4.metric("💰 Stok Değeri", f"{sum(u['miktar']*u.get('satis_fiyat',0) for u in st.session_state.stok):,.0f} ₺")
     col5, col6 = st.columns(2)
-    with col5:
-        metric_card("🧾 Bugünkü Satış", f"{bugunku_satis_toplami():,.0f} ₺", icon="💵", card_type="success")
-    
-    # Uyarılar
-    if kritik or skt_list:
-        st.markdown("---")
-        col_uyari1, col_uyari2 = st.columns(2)
-        
-        with col_uyari1:
-            if kritik:
-                st.markdown('<div class="alert-card alert-danger">', unsafe_allow_html=True)
-                st.markdown("### 🚨 Kritik Stok Uyarıları")
-                for u in kritik[:5]:
-                    st.error(f"📦 {u['urun_adi']}: {u['miktar']:.2f} {u['birim']}")
-                st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col_uyari2:
-            if skt_list:
-                st.markdown('<div class="alert-card alert-warning">', unsafe_allow_html=True)
-                st.markdown("### ⏰ SKT Yaklaşan Ürünler")
-                for u in skt_list[:5]:
-                    st.warning(f"📛 {u['urun_adi']}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
-                st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Hızlı grafikler
-    st.markdown("---")
-    col_graf1, col_graf2 = st.columns(2)
-    with col_graf1:
-        if st.session_state.stok:
-            df_stok = pd.DataFrame(st.session_state.stok)
-            fig = px.pie(df_stok, values='miktar', names='urun_adi', 
-                        title='Ürün Bazlı Stok Dağılımı',
-                        template='plotly_dark',
-                        hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-    with col_graf2:
-        if st.session_state.fire:
-            df_fire = pd.DataFrame(st.session_state.fire)
-            fig = px.bar(df_fire, x='urun_adi', y='miktar', color='aciliyet',
-                        title='Sipariş Durumu',
-                        template='plotly_dark')
-            st.plotly_chart(fig, use_container_width=True)
+    col5.metric("🧾 Bugünkü Satış", f"{bugunku_satis_toplami():,.0f} ₺")
+    if kritik:
+        st.subheader("🚨 Kritik Stoklar")
+        for u in kritik[:5]: st.error(f"{u['urun_adi']}: {u['miktar']:.2f} {u['birim']}")
+    if skt_list:
+        st.subheader("⏰ Yaklaşan SKT")
+        for u in skt_list[:5]: st.warning(f"{u['urun_adi']}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
 
 # ---------------------------- BARKOD SAYFASI --------------------------
 def barkod_sayfasi():
     st.markdown('<div class="main-header">📱 Barkod Okutma</div>', unsafe_allow_html=True)
-    
     col1, col2 = st.columns([1,1])
     with col1:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         barkod_manuel = st.text_input("🔢 Barkod Numarası", placeholder="Okutun veya yazın...", key="manuel_barkod")
         st.markdown('</div>', unsafe_allow_html=True)
-    
     with col2:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         img_file = st.camera_input("📷 Mobil Kamera")
         st.markdown('</div>', unsafe_allow_html=True)
-    
     barkod = None
     if img_file is not None:
         try:
@@ -486,17 +388,14 @@ def barkod_sayfasi():
                 st.warning("Barkod algılanamadı.")
         except Exception as e:
             st.error(f"Kamera hatası: {e}")
-    
     aktif_barkod = barkod_manuel or barkod
     if aktif_barkod:
         bilgi = st.session_state.barkod_db.get(aktif_barkod, {})
         urun_adi = bilgi.get("urun_adi", "")
-        
         if urun_adi:
             st.info(f"📦 **{urun_adi}** ({bilgi.get('birim','')}) – {bilgi.get('uretici','')}")
         else:
             st.warning("❓ Yeni barkod. Formu doldurup kaydedin.")
-        
         with st.form("barkod_form"):
             col1, col2 = st.columns(2)
             ad = col1.text_input("Ürün Adı *", value=urun_adi)
@@ -507,7 +406,6 @@ def barkod_sayfasi():
                                       index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
             skt = col1.date_input("SKT", min_value=datetime.now().date())
             islem = col2.radio("İşlem", ["📥 Stok Giriş", "📤 Stok Çıkış"], horizontal=True)
-            
             if st.form_submit_button("💾 Kaydet", use_container_width=True):
                 if not ad.strip():
                     st.error("Ürün adı zorunlu!")
@@ -536,7 +434,6 @@ def barkod_sayfasi():
 def stok_sayfasi():
     st.markdown('<div class="main-header">📦 Stok Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil"])
-    
     with tab1:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         df = pd.DataFrame(st.session_state.stok)
@@ -547,7 +444,6 @@ def stok_sayfasi():
         else:
             st.info("Henüz ürün yok.")
         st.markdown('</div>', unsafe_allow_html=True)
-    
     with tab2:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         with st.form("manuel_ekle"):
@@ -565,7 +461,6 @@ def stok_sayfasi():
             min_miktar = col1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
             skt = col2.date_input("SKT", min_value=datetime.now().date())
             raf_no = col3.text_input("Raf No")
-            
             if st.form_submit_button("💾 Kaydet", use_container_width=True):
                 if not urun_adi.strip():
                     st.error("Ürün adı zorunlu")
@@ -584,8 +479,7 @@ def stok_sayfasi():
                     st.success(f"🎉 {urun_adi} başarıyla stoğa eklendi!")
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-    
-        with tab3:
+    with tab3:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         st.subheader("Ürün Düzenle veya Sil")
         if st.session_state.stok:
@@ -593,8 +487,6 @@ def stok_sayfasi():
             secili = st.selectbox("Ürün Seç", urun_listesi, key="duzenle_sec")
             idx = urun_listesi.index(secili)
             urun = st.session_state.stok[idx]
-            
-            # ----- GÜNCELLEME FORMU (İçinde sadece form_submit_button var) -----
             with st.form("duzenle_form"):
                 col1, col2, col3 = st.columns(3)
                 yeni_ad = col1.text_input("Ürün Adı", value=urun["urun_adi"])
@@ -619,8 +511,6 @@ def stok_sayfasi():
                     skt = datetime.now()
                 yeni_skt = col2.date_input("SKT", value=skt)
                 yeni_raf = col3.text_input("Raf No", value=urun.get("raf_no", ""))
-                
-                # SADECE form_submit_button kullanılıyor!
                 if st.form_submit_button("💾 Güncelle"):
                     if not yeni_ad.strip():
                         st.error("Ürün adı boş olamaz!")
@@ -636,8 +526,6 @@ def stok_sayfasi():
                         veriyi_kaydet()
                         st.toast("✅ Ürün güncellendi", icon="✏️", duration=5000)
                         st.rerun()
-
-            # ----- SİLME İŞLEMİ (FORMUN DIŞINDA, popover içinde) -----
             with st.popover("🗑️ Sil"):
                 st.warning("Bu işlem geri alınamaz!")
                 if st.button("⚠️ Silmeyi Onayla", key=f"pop_sil_{idx}"):
@@ -653,39 +541,27 @@ def stok_sayfasi():
 # ---------------------------- SATIŞ SAYFASI --------------------------
 def satis_sayfasi():
     st.markdown('<div class="main-header">💰 Satış (POS)</div>', unsafe_allow_html=True)
-    
     satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
     if not satilabilir:
         st.warning("Satılabilecek stokta ürün bulunmuyor.")
         return
-    
     urun_secenekleri = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat',0):.2f} ₺)" for u in satilabilir]
     secili_str = st.selectbox("Ürün Seçin", urun_secenekleri)
     secili_idx = urun_secenekleri.index(secili_str)
     secili_urun = satilabilir[secili_idx]
-    
     birim_fiyat = secili_urun.get("satis_fiyat", 0)
     mevcut_stok = secili_urun["miktar"]
-    
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         miktar = st.number_input("Miktar", min_value=0.01, max_value=float(mevcut_stok), format="%.2f", value=1.0)
         st.markdown('</div>', unsafe_allow_html=True)
-    
     with col2:
         st.metric("Birim Fiyat", f"{birim_fiyat:.2f} ₺")
-    
     kalan_stok = mevcut_stok - miktar
     st.metric("📦 Kalan Stok (satış sonrası)", f"{kalan_stok:.2f} {secili_urun['birim']}")
-    
-    # Stok seviyesi progress bar
-    max_stok = mevcut_stok + 10  # Göreceli maksimum
-    progress_bar(mevcut_stok, max_stok, "Mevcut Stok")
-    
     toplam_tutar = miktar * birim_fiyat
     st.markdown(f"### 🧾 Toplam: {toplam_tutar:.2f} ₺")
-    
     if st.button("💳 Satış Yap", type="primary", use_container_width=True):
         if miktar <= 0 or miktar > mevcut_stok:
             st.error("Geçersiz miktar!")
@@ -721,7 +597,6 @@ def satis_sayfasi():
 def siparis_sayfasi():
     st.markdown('<div class="main-header">🔥 Sipariş Panosu</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
-    
     with tab1:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         df = pd.DataFrame(st.session_state.fire)
@@ -740,7 +615,6 @@ def siparis_sayfasi():
         else:
             st.info("Henüz sipariş eklenmemiş.")
         st.markdown('</div>', unsafe_allow_html=True)
-    
     with tab2:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         with st.form("fire_ekle"):
@@ -766,7 +640,7 @@ def fire_analizi():
             kat = next((u.get("kategori","Diğer") for u in st.session_state.stok if u["urun_adi"]==f["urun_adi"]), "Diğer")
             kat_fire[kat]=kat_fire.get(kat,0)+f["miktar"]
         fig=px.pie(names=list(kat_fire.keys()), values=list(kat_fire.values()), 
-                   title="Kategori Bazlı Fire", template='plotly_dark', hole=0.3)
+                   title="Kategori Bazlı Fire", hole=0.3)
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Fire kaydı yok.")
@@ -778,35 +652,31 @@ def satis_raporu():
     if not satislar:
         st.info("Henüz hiç satış yapılmadı.")
         return
-    
     df = pd.DataFrame(satislar)
     df["tarih"] = pd.to_datetime(df["tarih"])
     df["gun"] = df["tarih"].dt.date
     df["ay"] = df["tarih"].dt.strftime("%Y-%m")
-    
     col1, col2 = st.columns(2)
     with col1:
         tarih_aralik = st.date_input("Tarih Aralığı", value=(df["gun"].min(), df["gun"].max()), key="rapor_tarih")
     with col2:
         rapor_tipi = st.radio("Kırılım", ["Günlük", "Aylık", "Ürün Bazlı"], horizontal=True)
-    
     if len(tarih_aralik) == 2:
         mask = (df["gun"] >= tarih_aralik[0]) & (df["gun"] <= tarih_aralik[1])
         df_filtre = df[mask]
     else:
         df_filtre = df
-    
     if rapor_tipi == "Günlük":
         df_rapor = df_filtre.groupby("gun")["toplam_tutar"].sum().reset_index()
         df_rapor.columns = ["Tarih", "Toplam Satış (₺)"]
         st.dataframe(df_rapor, use_container_width=True)
-        fig = px.bar(df_rapor, x="Tarih", y="Toplam Satış (₺)", title="Günlük Satışlar", template='plotly_dark')
+        fig = px.bar(df_rapor, x="Tarih", y="Toplam Satış (₺)", title="Günlük Satışlar")
         st.plotly_chart(fig, use_container_width=True)
     elif rapor_tipi == "Aylık":
         df_rapor = df_filtre.groupby("ay")["toplam_tutar"].sum().reset_index()
         df_rapor.columns = ["Ay", "Toplam Satış (₺)"]
         st.dataframe(df_rapor, use_container_width=True)
-        fig = px.line(df_rapor, x="Ay", y="Toplam Satış (₺)", markers=True, title="Aylık Satış Trendi", template='plotly_dark')
+        fig = px.line(df_rapor, x="Ay", y="Toplam Satış (₺)", markers=True, title="Aylık Satış Trendi")
         st.plotly_chart(fig, use_container_width=True)
     else:
         df_rapor = df_filtre.groupby("urun_adi").agg(
@@ -816,16 +686,15 @@ def satis_raporu():
         st.dataframe(df_rapor, use_container_width=True)
         colA, colB = st.columns(2)
         with colA:
-            fig1 = px.pie(df_rapor, values="Ciro", names="urun_adi", title="Ürün Bazlı Ciro Dağılımı", template='plotly_dark', hole=0.3)
+            fig1 = px.pie(df_rapor, values="Ciro", names="urun_adi", title="Ürün Bazlı Ciro Dağılımı", hole=0.3)
             st.plotly_chart(fig1, use_container_width=True)
         with colB:
-            fig2 = px.bar(df_rapor, x="urun_adi", y="Adet", title="Ürün Bazlı Satış Adedi", template='plotly_dark')
+            fig2 = px.bar(df_rapor, x="urun_adi", y="Adet", title="Ürün Bazlı Satış Adedi")
             st.plotly_chart(fig2, use_container_width=True)
 
 # ---------------------------- YEDEKLEME -----------------------------
 def yedekleme_sayfasi():
     st.markdown('<div class="main-header">💾 Yedekleme</div>', unsafe_allow_html=True)
-    
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
@@ -833,7 +702,6 @@ def yedekleme_sayfasi():
         yedek = {"stok":st.session_state.stok,"fire":st.session_state.fire,"barkod_db":st.session_state.barkod_db}
         st.download_button("📥 JSON İndir", json.dumps(yedek,ensure_ascii=False,indent=2), "yedek.json", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-    
     with col2:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         st.subheader("📥 Yedek Yükle")
@@ -856,24 +724,18 @@ def veriyi_kaydet():
 # ---------------------------- ANA UYGULAMA --------------------------
 def main():
     st.set_page_config(
-        page_title="Market Yönetim Sistemi",
+        page_title="Market Yönetim",
         page_icon="🏪",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
-    # Modern CSS'i yükle
     modern_css()
-    
     pd.set_option('display.float_format', '{:.2f}'.format)
     oturumu_baslat()
     oturum_kontrol()
-    
     if not st.session_state.authenticated:
         giris_ekrani()
         return
-    
-    # Modern sidebar
     with st.sidebar:
         st.markdown("""
         <div style="text-align: center; padding: 20px 0;">
@@ -881,10 +743,7 @@ def main():
             <p style="color: #94A3B8; font-size: 0.9rem;">Stok Takip Sistemi v2.0</p>
         </div>
         """, unsafe_allow_html=True)
-        
         st.markdown("---")
-        
-        # Kullanıcı bilgisi
         if st.session_state.current_user:
             st.markdown(f"""
             <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; margin-bottom: 20px;">
@@ -892,19 +751,15 @@ def main():
                 <p style="color: #94A3B8; margin: 0; font-size: 0.8rem;">{st.session_state.current_user.get('rol', '')}</p>
             </div>
             """, unsafe_allow_html=True)
-        
         sayfa = st.radio(
             "Menü",
             ["🏠 Ana Panel", "📱 Barkod", "💵 Satış", "📦 Stok", 
              "🔥 Sipariş", "📉 Fire Analizi", "📊 Satış Raporu", "💾 Yedekleme"],
             label_visibility="collapsed"
         )
-        
         st.markdown("---")
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             cikis_yap()
-    
-    # Sayfa yönlendirme
     if sayfa == "🏠 Ana Panel": ana_sayfa()
     elif sayfa == "📱 Barkod": barkod_sayfasi()
     elif sayfa == "💵 Satış": satis_sayfasi()
