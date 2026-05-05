@@ -83,8 +83,15 @@ def veri_gecis_kontrol():
             degisti = True
     # Fire için (sipariş)
     for siparis in st.session_state.fire:
+        # Eski "adet" anahtarını "miktar"a dönüştür
+        if "adet" in siparis and "miktar" not in siparis:
+            siparis["miktar"] = siparis.pop("adet")
+            degisti = True
+        if "miktar" not in siparis:
+            siparis["miktar"] = 0
+            degisti = True
         if "birim" not in siparis:
-            siparis["birim"] = "adet"  # eski kayıtları varsayılan adet yapalım
+            siparis["birim"] = "adet"
             degisti = True
     if degisti:
         veriyi_kaydet()
@@ -327,7 +334,7 @@ def stok_sayfasi():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# ---------------------------- SİPARİŞ PANOSU (BİRİMLİ) --------------
+# ---------------------------- SİPARİŞ PANOSU (ESKİ VERİ UYUMLU) ----
 def siparis_sayfasi():
     st.header("🔥 Sipariş Panosu (Fire Takibi)")
     tab1, tab2, tab3 = st.tabs(["📋 Siparişler", "➕ Ekle", "✏️ Düzenle/Sil"])
@@ -338,12 +345,16 @@ def siparis_sayfasi():
         if not df.empty:
             if arama:
                 df = df[df["urun_adi"].str.contains(arama, case=False)]
-            # Gösterim: miktar + birim şeklinde birleştirelim
-            df["gorunum"] = df.apply(lambda r: f"{r['miktar']} {r['birim']} {r['urun_adi']}", axis=1)
+            # Güvenli erişim: hem "miktar" hem eski "adet" anahtarını dene
+            def guvenli_miktar(row):
+                return row.get("miktar", row.get("adet", 0))
+            def guvenli_birim(row):
+                return row.get("birim", "adet")
+            df["gorunum"] = df.apply(lambda r: f"{guvenli_miktar(r)} {guvenli_birim(r)} {r['urun_adi']}", axis=1)
             def format_aciliyet(val):
-                if "Yüksek" in val:
+                if "Yüksek" in str(val):
                     return '🔥 <span style="color:red; font-weight:bold">Yüksek</span>'
-                elif "Orta" in val:
+                elif "Orta" in str(val):
                     return '⚡ <span style="color:orange; font-weight:bold">Orta</span>'
                 else:
                     return '✅ <span style="color:green; font-weight:bold">Düşük</span>'
@@ -385,18 +396,24 @@ def siparis_sayfasi():
 
     with tab3:
         if st.session_state.fire:
-            siparis_str = [f"{s['miktar']} {s['birim']} {s['urun_adi']} ({s['aciliyet']})" for s in st.session_state.fire]
+            # Düzenleme için güvenli gösterim
+            def siparis_gorunum(s):
+                m = s.get("miktar", s.get("adet", 0))
+                b = s.get("birim", "adet")
+                return f"{m} {b} {s['urun_adi']} ({s.get('aciliyet', '')})"
+            siparis_str = [siparis_gorunum(s) for s in st.session_state.fire]
             secili_str = st.selectbox("Sipariş Seç", siparis_str, key="siparis_duzenle")
             idx = siparis_str.index(secili_str)
             siparis = st.session_state.fire[idx]
             with st.form("siparis_duzenle_form"):
                 yeni_ad = st.text_input("Ürün Adı", value=siparis["urun_adi"])
-                yeni_miktar = st.number_input("Miktar", value=float(siparis["miktar"]), min_value=0.01)
+                mevcut_miktar = float(siparis.get("miktar", siparis.get("adet", 0)))
+                yeni_miktar = st.number_input("Miktar", value=mevcut_miktar, min_value=0.01)
                 birimler = ["kg", "litre", "adet", "paket", "koli"]
                 try:
                     bir_index = birimler.index(siparis.get("birim", "adet"))
                 except ValueError:
-                    bir_index = 2  # adet
+                    bir_index = 2
                 yeni_birim = st.selectbox("Birim", birimler, index=bir_index)
                 aciliyetler = ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"]
                 try:
@@ -464,6 +481,7 @@ def yedekleme_sayfasi():
                     if "hareket" in icerik:
                         dosya_yaz(HAREKET_DOSYASI, icerik["hareket"])
                     veriyi_kaydet()
+                    veri_gecis_kontrol()  # yedekten gelen eski veriyi güncelle
                     st.toast("Yedek geri yüklendi.", icon="✅")
                     st.rerun()
                 else:
