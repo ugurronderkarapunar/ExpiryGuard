@@ -67,93 +67,100 @@ ROLLER              = config.get("roller", {"patron": ["tümü"], "kasiyer": ["b
 OTURUM_SURESI       = config.get("oturum_suresi_dk", 30)
 SKT_UYARI_GUN       = config.get("skt_uyari_gun", 3)
 
-# ---------------------------- GÜVENLİK: XSS Koruması ---------------------------
+# ---------------------------- GÜVENLİK ---------------------------
 def guvenli_html(metin):
-    """Kullanıcıdan gelen metinleri HTML enjektesinden korur."""
-    return (metin.replace("&", "&amp;")
-                 .replace("<", "&lt;")
-                 .replace(">", "&gt;")
-                 .replace('"', "&quot;")
-                 .replace("'", "&#x27;"))
+    return (metin.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#x27;"))
 
-# ---------------------------- MODERN CSS (YÜKSEK KONTRAST) ----------------------
-def modern_css():
+# ---------------------------- MODERN & ENERJİK CSS + MOBİL UYUMLU ----------------------
+def enerjik_css():
     st.markdown("""
     <style>
-        .stApp {
-            background-color: #0B1121;
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+            --accent: #f97316;
+            --accent2: #8b5cf6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
         }
-        section[data-testid="stSidebar"] {
-            background-color: #131C31;
-        }
-        section[data-testid="stSidebar"] .stRadio label {
-            color: #E2E8F0 !important;
-            font-weight: 500;
-        }
+        .stApp { background: var(--bg); }
+        .main { color: var(--text); }
+        header[data-testid="stHeader"] { background: #1e293b; }
+        section[data-testid="stSidebar"] { background: #1e293b; }
+        section[data-testid="stSidebar"] .stRadio label { color: var(--text) !important; font-weight: 500; }
         div[data-testid="stMetric"] {
-            background-color: #1E293B;
+            background: linear-gradient(145deg, #1e293b, #0f172a);
             border: 1px solid #334155;
-            border-radius: 16px;
-            padding: 16px;
-            color: #F8FAFC;
+            border-radius: 20px;
+            padding: 20px;
+            color: var(--text);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        div[data-testid="stMetric"] label {
-            color: #94A3B8 !important;
+        div[data-testid="stMetric"]:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 28px rgba(249,115,22,0.25);
         }
-        h1, h2, h3, h4, h5, h6 {
-            color: #F1F5F9;
-        }
+        h1, h2, h3 { color: var(--text); font-weight: 700; }
         .stButton > button {
-            border-radius: 10px;
-            font-weight: 600;
-            background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+            border-radius: 12px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f97316, #8b5cf6);
             color: white;
             border: none;
-            box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+            padding: 0.6rem 1.5rem;
+            box-shadow: 0 4px 14px rgba(249,115,22,0.4);
+            transition: all 0.3s;
+            letter-spacing: 0.5px;
         }
         .stButton > button:hover {
-            background: linear-gradient(135deg, #2563EB, #7C3AED);
-            box-shadow: 0 6px 16px rgba(59,130,246,0.5);
+            background: linear-gradient(135deg, #ea580c, #7c3aed);
+            box-shadow: 0 6px 20px rgba(249,115,22,0.6);
+            transform: scale(1.02);
         }
         input, select, textarea {
-            background-color: #1E293B !important;
-            color: #E2E8F0 !important;
+            background: #1e293b !important;
+            color: #f1f5f9 !important;
             border: 1px solid #475569 !important;
-            border-radius: 8px !important;
+            border-radius: 10px !important;
+            padding: 0.6rem !important;
         }
-        input::placeholder {
-            color: #64748B !important;
-        }
-        .stDataFrame {
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        .stDataFrame th {
-            background-color: #334155;
-            color: #F1F5F9;
-        }
-        .stDataFrame td {
-            background-color: #1E293B;
-            color: #CBD5E1;
-        }
+        .stDataFrame { border-radius: 16px; overflow: hidden; border: 1px solid #334155; }
+        .stDataFrame th { background: #334155; color: #f1f5f9; }
+        .stDataFrame td { background: #1e293b; color: #cbd5e1; }
         .custom-container {
-            background: #1E293B;
-            border-radius: 16px;
-            padding: 24px;
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border-radius: 24px;
+            padding: 28px;
             border: 1px solid #334155;
-            margin-bottom: 20px;
-        }
-        .main-header {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #F8FAFC;
-            border-bottom: 2px solid #3B82F6;
-            padding-bottom: 8px;
+            box-shadow: 0 12px 24px rgba(0,0,0,0.6);
             margin-bottom: 24px;
         }
+        .main-header {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #f97316, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1.2rem;
+            border-bottom: 3px solid #f97316;
+            padding-bottom: 0.5rem;
+        }
+        /* Mobil uyum */
+        @media (max-width: 768px) {
+            .stButton > button { width: 100%; font-size: 1rem; padding: 0.8rem; }
+            .custom-container { padding: 16px; }
+            .main-header { font-size: 1.6rem; }
+            div[data-testid="stMetric"] { padding: 14px; }
+            .stColumns { flex-direction: column; }
+        }
+        /* Toast animasyonu */
         div[data-testid="stToast"] {
-            background-color: #1E293B !important;
-            color: #F1F5F9 !important;
+            background: #1e293b !important;
+            color: #f1f5f9 !important;
+            border-left: 4px solid #f97316;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -238,30 +245,14 @@ def mock_barkod_db_olustur():
 
 # ---------------------------- HAREKET KAYDI -------------------------
 def hareket_ekle(kullanici, islem, urun_adi, detay=""):
-    hareket = {
-        "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "kullanici": kullanici,
-        "islem": islem,
-        "urun_adi": urun_adi,
-        "detay": detay
-    }
+    hareket = {"tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kullanici": kullanici, "islem": islem, "urun_adi": urun_adi, "detay": detay}
     hareketler = dosya_oku(HAREKET_DOSYASI, [])
     hareketler.append(hareket)
-    if len(hareketler) > 1000:
-        hareketler = hareketler[-1000:]
+    if len(hareketler) > 1000: hareketler = hareketler[-1000:]
     dosya_yaz(HAREKET_DOSYASI, hareketler)
 
 def satis_kaydet(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, kullanici):
-    satis = {
-        "id": str(uuid.uuid4())[:8],
-        "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "kullanici": kullanici,
-        "urun_adi": urun_adi,
-        "birim": birim,
-        "miktar": miktar,
-        "birim_fiyat": birim_fiyat,
-        "toplam_tutar": toplam_tutar
-    }
+    satis = {"id": str(uuid.uuid4())[:8], "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kullanici": kullanici, "urun_adi": urun_adi, "birim": birim, "miktar": miktar, "birim_fiyat": birim_fiyat, "toplam_tutar": toplam_tutar}
     satislar = dosya_oku(SATIS_DOSYASI, [])
     satislar.append(satis)
     dosya_yaz(SATIS_DOSYASI, satislar)
@@ -273,24 +264,15 @@ def bugunku_satis_toplami():
 
 # ---------------------------- OTURUM YÖNETİMİ -----------------------
 def oturumu_baslat():
-    if "stok" not in st.session_state:
-        st.session_state.stok = dosya_oku(STOK_DOSYASI, mock_stok_olustur())
-    if "fire" not in st.session_state:
-        st.session_state.fire = dosya_oku(FIRE_DOSYASI, mock_fire_olustur())
-    if "barkod_db" not in st.session_state:
-        st.session_state.barkod_db = dosya_oku(BARKOD_DB_DOSYASI, mock_barkod_db_olustur())
-    if "tedarikciler" not in st.session_state:
-        st.session_state.tedarikciler = dosya_oku(TEDARIKCI_DOSYASI, [])
-    if "kullanicilar" not in st.session_state:
-        st.session_state.kullanicilar = dosya_oku(KULLANICI_DOSYASI, [{"kullanici_adi":"admin","sifre":hashlib.sha256("1234".encode()).hexdigest(),"rol":"patron","ad":"Ahmet"}])
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-    if "current_user" not in st.session_state:
-        st.session_state.current_user = None
-    if "last_activity" not in st.session_state:
-        st.session_state.last_activity = datetime.now()
-    if "config" not in st.session_state:
-        st.session_state.config = config
+    if "stok" not in st.session_state: st.session_state.stok = dosya_oku(STOK_DOSYASI, mock_stok_olustur())
+    if "fire" not in st.session_state: st.session_state.fire = dosya_oku(FIRE_DOSYASI, mock_fire_olustur())
+    if "barkod_db" not in st.session_state: st.session_state.barkod_db = dosya_oku(BARKOD_DB_DOSYASI, mock_barkod_db_olustur())
+    if "tedarikciler" not in st.session_state: st.session_state.tedarikciler = dosya_oku(TEDARIKCI_DOSYASI, [])
+    if "kullanicilar" not in st.session_state: st.session_state.kullanicilar = dosya_oku(KULLANICI_DOSYASI, [{"kullanici_adi":"admin","sifre":hashlib.sha256("1234".encode()).hexdigest(),"rol":"patron","ad":"Ahmet"}])
+    if "authenticated" not in st.session_state: st.session_state.authenticated = False
+    if "current_user" not in st.session_state: st.session_state.current_user = None
+    if "last_activity" not in st.session_state: st.session_state.last_activity = datetime.now()
+    if "config" not in st.session_state: st.session_state.config = config
     veri_gecis_kontrol()
 
 def oturum_kontrol():
@@ -307,15 +289,12 @@ def oturum_kontrol():
 def giris_ekrani():
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.markdown('<h1 style="text-align: center;">🏪 Market Yönetim</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="text-align: center; color: #94A3B8;">Güvenli stok takibi</p>', unsafe_allow_html=True)
+        st.markdown('<h1 style="text-align:center; background:linear-gradient(135deg,#f97316,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🏪 Market Yönetim</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align:center; color:#94a3b8;">Enerjik stok takibi</p>', unsafe_allow_html=True)
         with st.form("giris", clear_on_submit=False):
             kullanici = st.text_input("👤 Kullanıcı Adı", placeholder="admin")
             sifre = st.text_input("🔒 Şifre", type="password", placeholder="••••")
-            col_btn1, col_btn2, col_btn3 = st.columns([1,2,1])
-            with col_btn2:
-                giris_btn = st.form_submit_button("🚀 Giriş Yap", use_container_width=True)
-            if giris_btn:
+            if st.form_submit_button("🚀 Giriş Yap", use_container_width=True):
                 sifre_hash = hashlib.sha256(sifre.encode()).hexdigest()
                 for k in st.session_state.kullanicilar:
                     if k["kullanici_adi"] == kullanici and (k["sifre"] == sifre_hash or sifre=="1234"):
@@ -342,13 +321,13 @@ def ana_sayfa():
                 k=(datetime.strptime(s,"%Y-%m-%d").date()-bugun).days
                 if 0<=k<=SKT_UYARI_GUN: skt_list.append({**u,"kalan":k})
             except: pass
-    col1,col2,col3,col4=st.columns(4)
-    col1.metric("📦 Ürün Çeşidi", len(st.session_state.stok))
-    col2.metric("⚠️ Kritik Stok", len(kritik))
-    col3.metric("⏰ SKT Yaklaşan", len(skt_list))
-    col4.metric("💰 Stok Değeri", f"{sum(u['miktar']*u.get('satis_fiyat',0) for u in st.session_state.stok):,.0f} ₺")
-    col5, col6 = st.columns(2)
-    col5.metric("🧾 Bugünkü Satış", f"{bugunku_satis_toplami():,.0f} ₺")
+    c1,c2,c3,c4=st.columns(4)
+    c1.metric("📦 Ürün", len(st.session_state.stok))
+    c2.metric("⚠️ Kritik", len(kritik))
+    c3.metric("⏰ SKT", len(skt_list))
+    c4.metric("💰 Değer", f"{sum(u['miktar']*u.get('satis_fiyat',0) for u in st.session_state.stok):,.0f} ₺")
+    c5,_ = st.columns(2)
+    c5.metric("🧾 Bugünkü Satış", f"{bugunku_satis_toplami():,.0f} ₺")
     if kritik:
         st.subheader("🚨 Kritik Stoklar")
         for u in kritik[:5]: st.error(f"{guvenli_html(u['urun_adi'])}: {u['miktar']:.2f} {u['birim']}")
@@ -356,275 +335,194 @@ def ana_sayfa():
         st.subheader("⏰ Yaklaşan SKT")
         for u in skt_list[:5]: st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
 
-# ---------------------------- BARKOD SAYFASI --------------------------
+# ---------------------------- BARKOD --------------------------
 def barkod_sayfasi():
     st.markdown('<div class="main-header">📱 Barkod Okutma</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([1,1])
-    with col1:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
+    c1,c2=st.columns(2)
+    with c1:
         barkod_manuel = st.text_input("🔢 Barkod Numarası", placeholder="Okutun veya yazın...", key="manuel_barkod")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
+    with c2:
         img_file = st.camera_input("📷 Mobil Kamera")
-        st.markdown('</div>', unsafe_allow_html=True)
     barkod = None
-    if img_file is not None:
+    if img_file:
         try:
             import cv2, numpy as np
-            file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            detector = cv2.QRCodeDetector()
-            data, _, _ = detector.detectAndDecode(img)
-            if data:
-                barkod = data
-                st.success(f"✅ Okunan: {barkod}")
-            else:
-                st.warning("Barkod algılanamadı.")
-        except Exception as e:
-            st.error(f"Kamera hatası: {e}")
-    aktif_barkod = barkod_manuel or barkod
-    if aktif_barkod:
-        bilgi = st.session_state.barkod_db.get(aktif_barkod, {})
-        urun_adi = bilgi.get("urun_adi", "")
-        if urun_adi:
-            st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim','')}) – {guvenli_html(bilgi.get('uretici',''))}")
-        else:
-            st.warning("❓ Yeni barkod. Formu doldurup kaydedin.")
+            img = cv2.imdecode(np.asarray(bytearray(img_file.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+            data, _, _ = cv2.QRCodeDetector().detectAndDecode(img)
+            if data: barkod = data; st.success(f"✅ {barkod}")
+            else: st.warning("Barkod algılanamadı.")
+        except Exception as e: st.error(f"Kamera hatası: {e}")
+    aktif = barkod_manuel or barkod
+    if aktif:
+        bilgi = st.session_state.barkod_db.get(aktif, {})
+        urun_adi = bilgi.get("urun_adi","")
+        if urun_adi: st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim','')}) – {guvenli_html(bilgi.get('uretici',''))}")
+        else: st.warning("❓ Yeni barkod.")
         with st.form("barkod_form"):
-            col1, col2 = st.columns(2)
-            ad = col1.text_input("Ürün Adı *", value=urun_adi)
-            miktar = col1.number_input("Miktar", min_value=0.01, format="%.2f", value=1.0)
-            birim = col2.selectbox("Birim", BIRIMLER,
-                                   index=BIRIMLER.index(bilgi.get("birim", "adet")) if bilgi.get("birim") in BIRIMLER else 0)
-            kategori = col2.selectbox("Kategori", KATEGORILER,
-                                      index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            skt = col1.date_input("SKT", min_value=datetime.now().date())
-            islem = col2.radio("İşlem", ["📥 Stok Giriş", "📤 Stok Çıkış"], horizontal=True)
-            if st.form_submit_button("💾 Kaydet", use_container_width=True):
-                if not ad.strip():
-                    st.error("Ürün adı zorunlu!")
+            c1,c2=st.columns(2)
+            ad = c1.text_input("Ürün Adı *", value=urun_adi)
+            miktar = c1.number_input("Miktar", 0.01, format="%.2f", value=1.0)
+            birim = c2.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0)
+            kategori = c2.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
+            skt = c1.date_input("SKT")
+            islem = c2.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
+            if st.form_submit_button("💾 Kaydet"):
+                if not ad.strip(): st.error("Ad zorunlu")
                 else:
-                    if aktif_barkod not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[aktif_barkod] = {"urun_adi": ad.strip(), "birim": birim, "kategori": kategori}
+                    if aktif not in st.session_state.barkod_db:
+                        st.session_state.barkod_db[aktif] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
                         dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
-                    gercek_miktar = miktar if islem == "📥 Stok Giriş" else -miktar
-                    for urun in st.session_state.stok:
-                        if urun.get("barkod") == aktif_barkod:
-                            urun["miktar"] += gercek_miktar
-                            urun["son_kullanma_tarihi"] = skt.strftime("%Y-%m-%d")
+                    gercek = miktar if islem=="📥 Giriş" else -miktar
+                    for u in st.session_state.stok:
+                        if u.get("barkod")==aktif:
+                            u["miktar"]+=gercek
+                            u["son_kullanma_tarihi"]=skt.strftime("%Y-%m-%d")
                             veriyi_kaydet()
                             st.toast("✅ Güncellendi", icon="✅", duration=5000)
                             st.rerun()
-                    st.session_state.stok.append({
-                        "urun_adi": ad.strip(), "miktar": max(0, gercek_miktar), "birim": birim,
-                        "kategori": kategori, "son_kullanma_tarihi": skt.strftime("%Y-%m-%d"),
-                        "barkod": aktif_barkod, "min_miktar": 0, "alis_fiyat": 0, "satis_fiyat": 0
-                    })
+                    st.session_state.stok.append({"urun_adi":ad.strip(),"miktar":max(0,gercek),"birim":birim,"kategori":kategori,"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"barkod":aktif,"min_miktar":0,"alis_fiyat":0,"satis_fiyat":0})
                     veriyi_kaydet()
                     st.toast("✅ Eklendi", icon="✅", duration=5000)
                     st.rerun()
 
-# ---------------------------- STOK SAYFASI --------------------------
+# ---------------------------- STOK --------------------------
 def stok_sayfasi():
     st.markdown('<div class="main-header">📦 Stok Yönetimi</div>', unsafe_allow_html=True)
-    tab1, tab2, tab3 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil"])
+    tab1,tab2,tab3 = st.tabs(["📋 Liste","➕ Ekle","✏️ Düzenle/Sil"])
     with tab1:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
-            def style_row(row):
-                return ['background-color:#ffcccc' if row.get('min_miktar',0)>0 and row['miktar']<=row['min_miktar'] else '' for _ in row]
+            def style_row(row): return ['background-color:#ffcccc' if row.get('min_miktar',0)>0 and row['miktar']<=row['min_miktar'] else '' for _ in row]
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
-        else:
-            st.info("Henüz ürün yok.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        else: st.info("Ürün yok.")
     with tab2:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         with st.form("manuel_ekle"):
-            barkod = st.text_input("Barkod (opsiyonel)")
+            barkod = st.text_input("Barkod")
             barkod_bilgi = st.session_state.barkod_db.get(barkod, {}) if barkod else {}
-            col1, col2, col3 = st.columns(3)
-            urun_adi = col1.text_input("Ürün Adı *", value=barkod_bilgi.get("urun_adi", ""))
-            miktar = col1.number_input("Miktar", min_value=0.0, format="%.2f")
-            birim = col2.selectbox("Birim", BIRIMLER,
-                                   index=BIRIMLER.index(barkod_bilgi.get("birim", "adet")) if barkod_bilgi.get("birim") in BIRIMLER else 0)
-            kategori = col3.selectbox("Kategori", KATEGORILER,
-                                      index=KATEGORILER.index(barkod_bilgi.get("kategori", "Diğer")) if barkod_bilgi.get("kategori") in KATEGORILER else 0)
-            alis_fiyat = col2.number_input("Alış Fiyatı", 0.0, format="%.2f")
-            satis_fiyat = col3.number_input("Satış Fiyatı", 0.0, format="%.2f")
-            min_miktar = col1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
-            skt = col2.date_input("SKT", min_value=datetime.now().date())
-            raf_no = col3.text_input("Raf No")
-            if st.form_submit_button("💾 Kaydet", use_container_width=True):
-                if not urun_adi.strip():
-                    st.error("Ürün adı zorunlu")
+            c1,c2,c3=st.columns(3)
+            ad = c1.text_input("Ürün Adı *", value=barkod_bilgi.get("urun_adi",""))
+            miktar = c1.number_input("Miktar", 0.0, format="%.2f")
+            birim = c2.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(barkod_bilgi.get("birim","adet")) if barkod_bilgi.get("birim") in BIRIMLER else 0)
+            kategori = c3.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(barkod_bilgi.get("kategori","Diğer")) if barkod_bilgi.get("kategori") in KATEGORILER else 0)
+            alis = c2.number_input("Alış Fiyatı", 0.0, format="%.2f")
+            satis = c3.number_input("Satış Fiyatı", 0.0, format="%.2f")
+            min_m = c1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
+            skt = c2.date_input("SKT")
+            raf = c3.text_input("Raf")
+            if st.form_submit_button("💾 Kaydet"):
+                if not ad.strip(): st.error("Ad zorunlu")
                 else:
                     if barkod and barkod not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[barkod] = {"urun_adi": urun_adi.strip(), "birim": birim, "kategori": kategori}
+                        st.session_state.barkod_db[barkod] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
                         dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
-                    st.session_state.stok.append({
-                        "urun_adi": urun_adi.strip(), "miktar": miktar, "birim": birim,
-                        "kategori": kategori, "min_miktar": min_miktar, "barkod": barkod.strip(),
-                        "son_kullanma_tarihi": skt.strftime("%Y-%m-%d"),
-                        "alis_fiyat": alis_fiyat, "satis_fiyat": satis_fiyat, "raf_no": raf_no.strip()
-                    })
+                    st.session_state.stok.append({"urun_adi":ad.strip(),"miktar":miktar,"birim":birim,"kategori":kategori,"min_miktar":min_m,"barkod":barkod.strip(),"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"alis_fiyat":alis,"satis_fiyat":satis,"raf_no":raf.strip()})
                     veriyi_kaydet()
-                    st.toast("✅ Ürün eklendi", icon="✅", duration=5000)
-                    st.success(f"🎉 {guvenli_html(urun_adi)} başarıyla stoğa eklendi!")
+                    st.toast("✅ Eklendi", icon="✅", duration=5000)
+                    st.success(f"🎉 {guvenli_html(ad)} stoğa eklendi!")
                     st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
     with tab3:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
-        st.subheader("Ürün Düzenle veya Sil")
         if st.session_state.stok:
-            urun_listesi = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']})" for u in st.session_state.stok]
-            secili = st.selectbox("Ürün Seç", urun_listesi, key="duzenle_sec")
-            idx = urun_listesi.index(secili)
+            urunler = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']})" for u in st.session_state.stok]
+            secili = st.selectbox("Ürün Seç", urunler, key="duzenle_sec")
+            idx = urunler.index(secili)
             urun = st.session_state.stok[idx]
             with st.form("duzenle_form"):
-                col1, col2, col3 = st.columns(3)
-                yeni_ad = col1.text_input("Ürün Adı", value=urun["urun_adi"])
-                yeni_miktar = col1.number_input("Miktar", value=float(urun["miktar"]), min_value=0.0, format="%.2f")
-                birimler = BIRIMLER
-                try:
-                    birim_index = birimler.index(urun.get("birim", "adet"))
-                except ValueError:
-                    birim_index = 0
-                yeni_birim = col2.selectbox("Birim", birimler, index=birim_index)
-                try:
-                    kat_index = KATEGORILER.index(urun.get("kategori", "Diğer"))
-                except ValueError:
-                    kat_index = 0
-                yeni_kategori = col3.selectbox("Kategori", KATEGORILER, index=kat_index)
-                yeni_alis = col2.number_input("Alış Fiyatı", value=float(urun.get("alis_fiyat", 0)), format="%.2f")
-                yeni_satis = col3.number_input("Satış Fiyatı", value=float(urun.get("satis_fiyat", 0)), format="%.2f")
-                yeni_min = col1.number_input("Min Stok", value=float(urun.get("min_miktar", 0)), format="%.2f")
-                try:
-                    skt = datetime.strptime(urun.get("son_kullanma_tarihi", "2026-01-01"), "%Y-%m-%d")
-                except:
-                    skt = datetime.now()
-                yeni_skt = col2.date_input("SKT", value=skt)
-                yeni_raf = col3.text_input("Raf No", value=urun.get("raf_no", ""))
+                c1,c2,c3=st.columns(3)
+                yeni_ad = c1.text_input("Ürün Adı", value=urun["urun_adi"])
+                yeni_miktar = c1.number_input("Miktar", value=float(urun["miktar"]), min_value=0.0, format="%.2f")
+                birim_index = BIRIMLER.index(urun.get("birim","adet")) if urun.get("birim") in BIRIMLER else 0
+                yeni_birim = c2.selectbox("Birim", BIRIMLER, index=birim_index)
+                kat_index = KATEGORILER.index(urun.get("kategori","Diğer")) if urun.get("kategori") in KATEGORILER else 0
+                yeni_kategori = c3.selectbox("Kategori", KATEGORILER, index=kat_index)
+                yeni_alis = c2.number_input("Alış Fiyatı", value=float(urun.get("alis_fiyat",0)), format="%.2f")
+                yeni_satis = c3.number_input("Satış Fiyatı", value=float(urun.get("satis_fiyat",0)), format="%.2f")
+                yeni_min = c1.number_input("Min Stok", value=float(urun.get("min_miktar",0)), format="%.2f")
+                try: skt = datetime.strptime(urun.get("son_kullanma_tarihi","2026-01-01"),"%Y-%m-%d")
+                except: skt = datetime.now()
+                yeni_skt = c2.date_input("SKT", value=skt)
+                yeni_raf = c3.text_input("Raf", value=urun.get("raf_no",""))
                 if st.form_submit_button("💾 Güncelle"):
-                    if not yeni_ad.strip():
-                        st.error("Ürün adı boş olamaz!")
+                    if not yeni_ad.strip(): st.error("Ad zorunlu")
                     else:
-                        st.session_state.stok[idx] = {
-                            "urun_adi": yeni_ad.strip(), "miktar": yeni_miktar, "birim": yeni_birim,
-                            "kategori": yeni_kategori, "min_miktar": yeni_min,
-                            "barkod": urun.get("barkod", ""), "son_kullanma_tarihi": yeni_skt.strftime("%Y-%m-%d"),
-                            "alis_fiyat": yeni_alis, "satis_fiyat": yeni_satis,
-                            "tedarikci": urun.get("tedarikci", ""), "raf_no": yeni_raf.strip(),
-                            "kdv_oran": urun.get("kdv_oran", 8)
-                        }
+                        st.session_state.stok[idx] = {"urun_adi":yeni_ad.strip(),"miktar":yeni_miktar,"birim":yeni_birim,"kategori":yeni_kategori,"min_miktar":yeni_min,"barkod":urun.get("barkod",""),"son_kullanma_tarihi":yeni_skt.strftime("%Y-%m-%d"),"alis_fiyat":yeni_alis,"satis_fiyat":yeni_satis,"tedarikci":urun.get("tedarikci",""),"raf_no":yeni_raf.strip(),"kdv_oran":urun.get("kdv_oran",8)}
                         veriyi_kaydet()
-                        st.toast("✅ Ürün güncellendi", icon="✏️", duration=5000)
+                        st.toast("✅ Güncellendi", icon="✏️", duration=5000)
                         st.rerun()
             with st.popover("🗑️ Sil"):
-                st.warning("Bu işlem geri alınamaz!")
-                if st.button("⚠️ Silmeyi Onayla", key=f"pop_sil_{idx}"):
+                st.warning("Geri alınamaz!")
+                if st.button("⚠️ Onayla", key=f"pop_sil_{idx}"):
                     silinen = st.session_state.stok.pop(idx)
                     veriyi_kaydet()
                     hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"], "Ürün stoğu silindi")
                     st.toast(f"🗑️ {guvenli_html(silinen['urun_adi'])} silindi", icon="🗑️", duration=5000)
                     st.rerun()
-        else:
-            st.info("Düzenlenecek ürün yok.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        else: st.info("Ürün yok.")
 
-# ---------------------------- SATIŞ SAYFASI --------------------------
+# ---------------------------- SATIŞ --------------------------
 def satis_sayfasi():
     st.markdown('<div class="main-header">💰 Satış (POS)</div>', unsafe_allow_html=True)
-    satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
-    if not satilabilir:
-        st.warning("Satılabilecek stokta ürün bulunmuyor.")
-        return
-    urun_secenekleri = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat',0):.2f} ₺)" for u in satilabilir]
-    secili_str = st.selectbox("Ürün Seçin", urun_secenekleri)
-    secili_idx = urun_secenekleri.index(secili_str)
-    secili_urun = satilabilir[secili_idx]
-    birim_fiyat = secili_urun.get("satis_fiyat", 0)
-    mevcut_stok = secili_urun["miktar"]
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
-        miktar = st.number_input("Miktar", min_value=0.01, max_value=float(mevcut_stok), format="%.2f", value=1.0)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col2:
-        st.metric("Birim Fiyat", f"{birim_fiyat:.2f} ₺")
-    kalan_stok = mevcut_stok - miktar
-    st.metric("📦 Kalan Stok (satış sonrası)", f"{kalan_stok:.2f} {secili_urun['birim']}")
-    toplam_tutar = miktar * birim_fiyat
-    st.markdown(f"### 🧾 Toplam: {toplam_tutar:.2f} ₺")
+    satilabilir = [u for u in st.session_state.stok if u["miktar"]>0]
+    if not satilabilir: st.warning("Satılacak ürün yok"); return
+    secenekler = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat',0):.2f} ₺)" for u in satilabilir]
+    secili_str = st.selectbox("Ürün Seçin", secenekler)
+    idx = secenekler.index(secili_str)
+    urun = satilabilir[idx]
+    fiyat = urun.get("satis_fiyat",0)
+    mevcut = urun["miktar"]
+    c1,c2=st.columns(2)
+    with c1: miktar = st.number_input("Miktar", 0.01, float(mevcut), format="%.2f", value=1.0)
+    with c2: st.metric("Birim Fiyat", f"{fiyat:.2f} ₺")
+    kalan = mevcut - miktar
+    st.metric("📦 Kalan Stok", f"{kalan:.2f} {urun['birim']}")
+    toplam = miktar * fiyat
+    st.markdown(f"### 🧾 Toplam: {toplam:.2f} ₺")
     if st.button("💳 Satış Yap", type="primary", use_container_width=True):
-        if miktar <= 0 or miktar > mevcut_stok:
-            st.error("Geçersiz miktar!")
+        if miktar<=0 or miktar>mevcut: st.error("Geçersiz miktar")
         else:
-            for urun in st.session_state.stok:
-                if urun["urun_adi"] == secili_urun["urun_adi"] and urun.get("barkod") == secili_urun.get("barkod"):
-                    urun["miktar"] = round(urun["miktar"] - miktar, 2)
-                    yeni_miktar = urun["miktar"]
-                    min_m = urun.get("min_miktar", 0)
-                    if yeni_miktar <= min_m and min_m > 0:
-                        zaten_varmi = any(f["urun_adi"] == urun["urun_adi"] and f["durum"] == "Bekliyor" for f in st.session_state.fire)
-                        if not zaten_varmi:
-                            st.session_state.fire.append({
-                                "urun_adi": urun["urun_adi"],
-                                "miktar": min_m - yeni_miktar + 1,
-                                "birim": urun["birim"],
-                                "aciliyet": "🔥 Yüksek",
-                                "tedarikci": urun.get("tedarikci", ""),
-                                "durum": "Bekliyor",
-                                "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
-                            })
-                            st.warning(f"⚠️ {guvenli_html(urun['urun_adi'])} kritik stok altına düştü! Otomatik sipariş fişi eklendi.")
+            for u in st.session_state.stok:
+                if u["urun_adi"]==urun["urun_adi"] and u.get("barkod")==urun.get("barkod"):
+                    u["miktar"]=round(u["miktar"]-miktar,2)
+                    yeni = u["miktar"]
+                    min_m = u.get("min_miktar",0)
+                    if yeni<=min_m and min_m>0:
+                        if not any(f["urun_adi"]==u["urun_adi"] and f["durum"]=="Bekliyor" for f in st.session_state.fire):
+                            st.session_state.fire.append({"urun_adi":u["urun_adi"],"miktar":min_m-yeni+1,"birim":u["birim"],"aciliyet":"🔥 Yüksek","tedarikci":u.get("tedarikci",""),"durum":"Bekliyor","eklenme_tarihi":datetime.now().strftime("%Y-%m-%d %H:%M")})
+                            st.warning(f"⚠️ {guvenli_html(u['urun_adi'])} kritik stok altına düştü! Otomatik sipariş fişi eklendi.")
                     break
-            satis_kaydet(secili_urun["urun_adi"], secili_urun["birim"], miktar, birim_fiyat, toplam_tutar,
-                         st.session_state.current_user["kullanici_adi"] if st.session_state.current_user else "kasiyer")
-            hareket_ekle(st.session_state.current_user["kullanici_adi"], "Satış", secili_urun["urun_adi"],
-                         f"{miktar} {secili_urun['birim']} satıldı, tutar: {toplam_tutar:.2f} ₺")
+            satis_kaydet(urun["urun_adi"],urun["birim"],miktar,fiyat,toplam,st.session_state.current_user["kullanici_adi"] if st.session_state.current_user else "kasiyer")
+            hareket_ekle(st.session_state.current_user["kullanici_adi"],"Satış",urun["urun_adi"],f"{miktar} {urun['birim']} satıldı, tutar: {toplam:.2f} ₺")
             veriyi_kaydet()
-            st.toast(f"✅ Satış tamamlandı: {toplam_tutar:.2f} ₺", icon="💵", duration=5000)
+            st.toast(f"✅ Satış: {toplam:.2f} ₺", icon="💵", duration=5000)
             st.rerun()
 
-# ---------------------------- SİPARİŞ SAYFASI -----------------------
+# ---------------------------- SİPARİŞ -----------------------
 def siparis_sayfasi():
     st.markdown('<div class="main-header">🔥 Sipariş Panosu</div>', unsafe_allow_html=True)
-    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
+    tab1,tab2=st.tabs(["📋 Liste","➕ Ekle"])
     with tab1:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         df = pd.DataFrame(st.session_state.fire)
         if not df.empty:
-            for i, row in df.iterrows():
-                col1, col2 = st.columns([4,1])
-                with col1:
-                    aciliyet_renk = "🟢" if "Düşük" in row['aciliyet'] else "🟡" if "Orta" in row['aciliyet'] else "🔴"
-                    st.write(f"{aciliyet_renk} **{guvenli_html(row['urun_adi'])}** – {row['miktar']} {row['birim']} – {row['durum']}")
-                with col2:
+            for i,row in df.iterrows():
+                c1,c2=st.columns([4,1])
+                with c1:
+                    renk = "🟢" if "Düşük" in row['aciliyet'] else "🟡" if "Orta" in row['aciliyet'] else "🔴"
+                    st.write(f"{renk} **{guvenli_html(row['urun_adi'])}** – {row['miktar']} {row['birim']} – {row['durum']}")
+                with c2:
                     if st.button("🗑️ Sil", key=f"sil_fire_{i}"):
                         st.session_state.fire.pop(i)
                         veriyi_kaydet()
                         st.toast("Sipariş silindi", icon="🗑️", duration=5000)
                         st.rerun()
-        else:
-            st.info("Henüz sipariş eklenmemiş.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        else: st.info("Sipariş yok.")
     with tab2:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         with st.form("fire_ekle"):
             ad = st.text_input("Ürün")
             miktar = st.number_input("Miktar",0.01,format="%.2f")
-            if st.form_submit_button("Ekle", use_container_width=True):
-                st.session_state.fire.append({
-                    "urun_adi":ad,"miktar":miktar,"birim":"adet",
-                    "aciliyet":"⚡ Orta","durum":"Bekliyor",
-                    "eklenme_tarihi":datetime.now().strftime("%Y-%m-%d %H:%M")
-                })
+            if st.form_submit_button("Ekle"):
+                st.session_state.fire.append({"urun_adi":ad,"miktar":miktar,"birim":"adet","aciliyet":"⚡ Orta","durum":"Bekliyor","eklenme_tarihi":datetime.now().strftime("%Y-%m-%d %H:%M")})
                 veriyi_kaydet()
                 st.toast("Sipariş eklendi", icon="🔥", duration=5000)
                 st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------- FİRE ANALİZİ --------------------------
 def fire_analizi():
@@ -634,82 +532,63 @@ def fire_analizi():
         for f in st.session_state.fire:
             kat = next((u.get("kategori","Diğer") for u in st.session_state.stok if u["urun_adi"]==f["urun_adi"]), "Diğer")
             kat_fire[kat]=kat_fire.get(kat,0)+f["miktar"]
-        fig=px.pie(names=list(kat_fire.keys()), values=list(kat_fire.values()), 
-                   title="Kategori Bazlı Fire", hole=0.3)
+        fig=px.pie(names=list(kat_fire.keys()), values=list(kat_fire.values()), title="Kategori Bazlı Fire", hole=0.3, color_discrete_sequence=px.colors.qualitative.Bold)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Fire kaydı yok.")
+    else: st.info("Fire kaydı yok.")
 
 # ---------------------------- SATIŞ RAPORU ---------------------------
 def satis_raporu():
     st.markdown('<div class="main-header">📊 Satış Raporu</div>', unsafe_allow_html=True)
     satislar = dosya_oku(SATIS_DOSYASI, [])
-    if not satislar:
-        st.info("Henüz hiç satış yapılmadı.")
-        return
+    if not satislar: st.info("Henüz satış yok."); return
     df = pd.DataFrame(satislar)
-    df["tarih"] = pd.to_datetime(df["tarih"])
-    df["gun"] = df["tarih"].dt.date
-    df["ay"] = df["tarih"].dt.strftime("%Y-%m")
-    col1, col2 = st.columns(2)
-    with col1:
-        tarih_aralik = st.date_input("Tarih Aralığı", value=(df["gun"].min(), df["gun"].max()), key="rapor_tarih")
-    with col2:
-        rapor_tipi = st.radio("Kırılım", ["Günlük", "Aylık", "Ürün Bazlı"], horizontal=True)
-    if len(tarih_aralik) == 2:
-        mask = (df["gun"] >= tarih_aralik[0]) & (df["gun"] <= tarih_aralik[1])
-        df_filtre = df[mask]
-    else:
-        df_filtre = df
-    if rapor_tipi == "Günlük":
-        df_rapor = df_filtre.groupby("gun")["toplam_tutar"].sum().reset_index()
-        df_rapor.columns = ["Tarih", "Toplam Satış (₺)"]
-        st.dataframe(df_rapor, use_container_width=True)
-        fig = px.bar(df_rapor, x="Tarih", y="Toplam Satış (₺)", title="Günlük Satışlar")
+    df["tarih"]=pd.to_datetime(df["tarih"])
+    df["gun"]=df["tarih"].dt.date
+    df["ay"]=df["tarih"].dt.strftime("%Y-%m")
+    c1,c2=st.columns(2)
+    with c1: aralik = st.date_input("Tarih Aralığı", value=(df["gun"].min(),df["gun"].max()), key="rapor_tarih")
+    with c2: tip = st.radio("Kırılım", ["Günlük","Aylık","Ürün Bazlı"], horizontal=True)
+    if len(aralik)==2: df = df[(df["gun"]>=aralik[0])&(df["gun"]<=aralik[1])]
+    if tip=="Günlük":
+        rpr = df.groupby("gun")["toplam_tutar"].sum().reset_index()
+        rpr.columns=["Tarih","Toplam Satış (₺)"]
+        st.dataframe(rpr, use_container_width=True)
+        fig=px.bar(rpr, x="Tarih", y="Toplam Satış (₺)", title="Günlük Satışlar", color_discrete_sequence=["#f97316"])
         st.plotly_chart(fig, use_container_width=True)
-    elif rapor_tipi == "Aylık":
-        df_rapor = df_filtre.groupby("ay")["toplam_tutar"].sum().reset_index()
-        df_rapor.columns = ["Ay", "Toplam Satış (₺)"]
-        st.dataframe(df_rapor, use_container_width=True)
-        fig = px.line(df_rapor, x="Ay", y="Toplam Satış (₺)", markers=True, title="Aylık Satış Trendi")
+    elif tip=="Aylık":
+        rpr = df.groupby("ay")["toplam_tutar"].sum().reset_index()
+        rpr.columns=["Ay","Toplam Satış (₺)"]
+        st.dataframe(rpr, use_container_width=True)
+        fig=px.line(rpr, x="Ay", y="Toplam Satış (₺)", markers=True, title="Aylık Trend", color_discrete_sequence=["#8b5cf6"])
         st.plotly_chart(fig, use_container_width=True)
     else:
-        df_rapor = df_filtre.groupby("urun_adi").agg(
-            Adet=("miktar", "sum"),
-            Ciro=("toplam_tutar", "sum")
-        ).reset_index()
-        st.dataframe(df_rapor, use_container_width=True)
-        colA, colB = st.columns(2)
+        rpr = df.groupby("urun_adi").agg(Adet=("miktar","sum"),Ciro=("toplam_tutar","sum")).reset_index()
+        st.dataframe(rpr, use_container_width=True)
+        colA,colB=st.columns(2)
         with colA:
-            fig1 = px.pie(df_rapor, values="Ciro", names="urun_adi", title="Ürün Bazlı Ciro Dağılımı", hole=0.3)
+            fig1=px.pie(rpr, values="Ciro", names="urun_adi", title="Ciro Dağılımı", hole=0.3, color_discrete_sequence=px.colors.qualitative.Bold)
             st.plotly_chart(fig1, use_container_width=True)
         with colB:
-            fig2 = px.bar(df_rapor, x="urun_adi", y="Adet", title="Ürün Bazlı Satış Adedi")
+            fig2=px.bar(rpr, x="urun_adi", y="Adet", title="Satış Adedi", color_discrete_sequence=["#10b981"])
             st.plotly_chart(fig2, use_container_width=True)
 
 # ---------------------------- YEDEKLEME -----------------------------
 def yedekleme_sayfasi():
     st.markdown('<div class="main-header">💾 Yedekleme</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
-        st.subheader("📤 Yedek Al")
-        yedek = {"stok":st.session_state.stok,"fire":st.session_state.fire,"barkod_db":st.session_state.barkod_db}
+    c1,c2=st.columns(2)
+    with c1:
+        yedek={"stok":st.session_state.stok,"fire":st.session_state.fire,"barkod_db":st.session_state.barkod_db}
         st.download_button("📥 JSON İndir", json.dumps(yedek,ensure_ascii=False,indent=2), "yedek.json", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown('<div class="custom-container">', unsafe_allow_html=True)
-        st.subheader("📥 Yedek Yükle")
-        dosya = st.file_uploader("JSON yedek seç", type="json")
+    with c2:
+        dosya=st.file_uploader("Yedek yükle", type="json")
         if dosya:
-            icerik = json.load(dosya)
-            st.session_state.stok = icerik.get("stok",[])
-            st.session_state.fire = icerik.get("fire",[])
-            st.session_state.barkod_db = icerik.get("barkod_db",{})
+            icerik=json.load(dosya)
+            st.session_state.stok=icerik.get("stok",[])
+            st.session_state.fire=icerik.get("fire",[])
+            st.session_state.barkod_db=icerik.get("barkod_db",{})
             veriyi_kaydet()
             st.toast("✅ Yüklendi", duration=5000)
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------------------------- VERİ KAYDET ---------------------------
 def veriyi_kaydet():
@@ -718,13 +597,8 @@ def veriyi_kaydet():
 
 # ---------------------------- ANA UYGULAMA --------------------------
 def main():
-    st.set_page_config(
-        page_title="Market Yönetim",
-        page_icon="🏪",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    modern_css()
+    st.set_page_config(page_title="Market Yönetim", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
+    enerjik_css()
     pd.set_option('display.float_format', '{:.2f}'.format)
     oturumu_baslat()
     oturum_kontrol()
@@ -732,24 +606,13 @@ def main():
         giris_ekrani()
         return
     with st.sidebar:
-        st.markdown("""
-        <div style="text-align: center; padding: 20px 0;">
-            <h2 style="color: white;">🏪 Market Yönetim</h2>
-            <p style="color: #94A3B8;">v2.0 • Güvenli</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;padding:20px 0;"><h2 style="color:white;">🏪 Market</h2><p style="color:#f97316;">v2.0 Enerjik</p></div>', unsafe_allow_html=True)
         st.markdown("---")
         if st.session_state.current_user:
-            st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 10px;">
-                <p style="color: white;">👤 {st.session_state.current_user.get('ad', 'Kullanıcı')}</p>
-                <p style="color: #94A3B8; font-size: 0.8rem;">{st.session_state.current_user.get('rol', '')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        sayfa = st.radio("Menü", ["🏠 Ana Panel", "📱 Barkod", "💵 Satış", "📦 Stok", "🔥 Sipariş", "📉 Fire Analizi", "📊 Satış Raporu", "💾 Yedekleme"], label_visibility="collapsed")
+            st.markdown(f'<div style="background:rgba(249,115,22,0.2);border-radius:10px;padding:10px;"><p style="color:white;">👤 {st.session_state.current_user.get("ad","Kullanıcı")}</p></div>', unsafe_allow_html=True)
+        sayfa = st.radio("Menü", ["🏠 Ana Panel","📱 Barkod","💵 Satış","📦 Stok","🔥 Sipariş","📉 Fire Analizi","📊 Satış Raporu","💾 Yedekleme"], label_visibility="collapsed")
         st.markdown("---")
-        if st.button("🚪 Çıkış Yap", use_container_width=True):
-            cikis_yap()
+        if st.button("🚪 Çıkış", use_container_width=True): cikis_yap()
     if sayfa == "🏠 Ana Panel": ana_sayfa()
     elif sayfa == "📱 Barkod": barkod_sayfasi()
     elif sayfa == "💵 Satış": satis_sayfasi()
