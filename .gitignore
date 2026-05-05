@@ -1,0 +1,6 @@
+# .streamlit/secrets.toml.sample
+# Bu dosyayı secrets.toml olarak kopyalayıp kendi bilgilerinizi girin.
+
+[admin]
+kullanici_adi = "admin"
+sifre = "1234"
