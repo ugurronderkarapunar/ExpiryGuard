@@ -67,60 +67,72 @@ ROLLER              = config.get("roller", {"patron": ["tümü"], "kasiyer": ["b
 OTURUM_SURESI       = config.get("oturum_suresi_dk", 30)
 SKT_UYARI_GUN       = config.get("skt_uyari_gun", 3)
 
-# ---------------------------- MODERN DARK CSS ----------------------
+# ---------------------------- GÜVENLİK: XSS Koruması ---------------------------
+def guvenli_html(metin):
+    """Kullanıcıdan gelen metinleri HTML enjektesinden korur."""
+    return (metin.replace("&", "&amp;")
+                 .replace("<", "&lt;")
+                 .replace(">", "&gt;")
+                 .replace('"', "&quot;")
+                 .replace("'", "&#x27;"))
+
+# ---------------------------- MODERN CSS (YÜKSEK KONTRAST) ----------------------
 def modern_css():
     st.markdown("""
     <style>
         .stApp {
-            background-color: #0F172A;
+            background-color: #0B1121;
         }
-        .main {
-            background-color: #0F172A;
-            color: #E2E8F0;
+        section[data-testid="stSidebar"] {
+            background-color: #131C31;
         }
-        header[data-testid="stHeader"] {
+        section[data-testid="stSidebar"] .stRadio label {
+            color: #E2E8F0 !important;
+            font-weight: 500;
+        }
+        div[data-testid="stMetric"] {
             background-color: #1E293B;
-        }
-        .stSidebar {
-            background-color: #1E293B;
-        }
-        .stMetric {
-            background-color: #1E293B;
-            border-radius: 12px;
+            border: 1px solid #334155;
+            border-radius: 16px;
             padding: 16px;
+            color: #F8FAFC;
+        }
+        div[data-testid="stMetric"] label {
+            color: #94A3B8 !important;
+        }
+        h1, h2, h3, h4, h5, h6 {
             color: #F1F5F9;
         }
         .stButton > button {
-            border-radius: 8px;
+            border-radius: 10px;
             font-weight: 600;
             background: linear-gradient(135deg, #3B82F6, #8B5CF6);
             color: white;
             border: none;
-            transition: all 0.3s;
             box-shadow: 0 4px 12px rgba(59,130,246,0.3);
         }
         .stButton > button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(59,130,246,0.5);
+            background: linear-gradient(135deg, #2563EB, #7C3AED);
+            box-shadow: 0 6px 16px rgba(59,130,246,0.5);
         }
-        .stTextInput > div > div > input,
-        .stSelectbox > div > div > select,
-        .stNumberInput > div > div > input {
-            background-color: #1E293B;
-            color: #E2E8F0;
-            border: 1px solid #475569;
-            border-radius: 8px;
+        input, select, textarea {
+            background-color: #1E293B !important;
+            color: #E2E8F0 !important;
+            border: 1px solid #475569 !important;
+            border-radius: 8px !important;
         }
-        .dataframe {
-            background-color: #1E293B;
-            color: #E2E8F0;
+        input::placeholder {
+            color: #64748B !important;
+        }
+        .stDataFrame {
             border-radius: 12px;
+            overflow: hidden;
         }
-        .dataframe th {
+        .stDataFrame th {
             background-color: #334155;
             color: #F1F5F9;
         }
-        .dataframe td {
+        .stDataFrame td {
             background-color: #1E293B;
             color: #CBD5E1;
         }
@@ -128,37 +140,20 @@ def modern_css():
             background: #1E293B;
             border-radius: 16px;
             padding: 24px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
-            margin: 12px 0;
             border: 1px solid #334155;
+            margin-bottom: 20px;
         }
         .main-header {
             font-size: 2rem;
             font-weight: 700;
-            color: #F1F5F9;
-            margin-bottom: 1rem;
+            color: #F8FAFC;
             border-bottom: 2px solid #3B82F6;
-            padding-bottom: 0.5rem;
+            padding-bottom: 8px;
+            margin-bottom: 24px;
         }
-        .alert-card {
-            border-radius: 12px;
-            padding: 16px;
-            margin: 10px 0;
-            border-left: 4px solid;
-        }
-        a {
-            color: #60A5FA;
-        }
-        .stToast {
+        div[data-testid="stToast"] {
             background-color: #1E293B !important;
             color: #F1F5F9 !important;
-        }
-        .stProgress > div > div {
-            background: linear-gradient(90deg, #F59E0B, #EF4444);
-            border-radius: 10px;
-        }
-        .st-emotion-cache-1wivap2 {
-            background-color: #1E293B;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -312,8 +307,8 @@ def oturum_kontrol():
 def giris_ekrani():
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.markdown('<h1 style="text-align: center; color: #F1F5F9;">🏪 Market Yönetim Sistemi</h1>', unsafe_allow_html=True)
-        st.markdown('<p style="text-align: center; color: #94A3B8;">Stok takibinizi modernleştirin</p>', unsafe_allow_html=True)
+        st.markdown('<h1 style="text-align: center;">🏪 Market Yönetim</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; color: #94A3B8;">Güvenli stok takibi</p>', unsafe_allow_html=True)
         with st.form("giris", clear_on_submit=False):
             kullanici = st.text_input("👤 Kullanıcı Adı", placeholder="admin")
             sifre = st.text_input("🔒 Şifre", type="password", placeholder="••••")
@@ -356,10 +351,10 @@ def ana_sayfa():
     col5.metric("🧾 Bugünkü Satış", f"{bugunku_satis_toplami():,.0f} ₺")
     if kritik:
         st.subheader("🚨 Kritik Stoklar")
-        for u in kritik[:5]: st.error(f"{u['urun_adi']}: {u['miktar']:.2f} {u['birim']}")
+        for u in kritik[:5]: st.error(f"{guvenli_html(u['urun_adi'])}: {u['miktar']:.2f} {u['birim']}")
     if skt_list:
         st.subheader("⏰ Yaklaşan SKT")
-        for u in skt_list[:5]: st.warning(f"{u['urun_adi']}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
+        for u in skt_list[:5]: st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
 
 # ---------------------------- BARKOD SAYFASI --------------------------
 def barkod_sayfasi():
@@ -393,7 +388,7 @@ def barkod_sayfasi():
         bilgi = st.session_state.barkod_db.get(aktif_barkod, {})
         urun_adi = bilgi.get("urun_adi", "")
         if urun_adi:
-            st.info(f"📦 **{urun_adi}** ({bilgi.get('birim','')}) – {bilgi.get('uretici','')}")
+            st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim','')}) – {guvenli_html(bilgi.get('uretici',''))}")
         else:
             st.warning("❓ Yeni barkod. Formu doldurup kaydedin.")
         with st.form("barkod_form"):
@@ -476,14 +471,14 @@ def stok_sayfasi():
                     })
                     veriyi_kaydet()
                     st.toast("✅ Ürün eklendi", icon="✅", duration=5000)
-                    st.success(f"🎉 {urun_adi} başarıyla stoğa eklendi!")
+                    st.success(f"🎉 {guvenli_html(urun_adi)} başarıyla stoğa eklendi!")
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     with tab3:
         st.markdown('<div class="custom-container">', unsafe_allow_html=True)
         st.subheader("Ürün Düzenle veya Sil")
         if st.session_state.stok:
-            urun_listesi = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']})" for u in st.session_state.stok]
+            urun_listesi = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']})" for u in st.session_state.stok]
             secili = st.selectbox("Ürün Seç", urun_listesi, key="duzenle_sec")
             idx = urun_listesi.index(secili)
             urun = st.session_state.stok[idx]
@@ -532,7 +527,7 @@ def stok_sayfasi():
                     silinen = st.session_state.stok.pop(idx)
                     veriyi_kaydet()
                     hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"], "Ürün stoğu silindi")
-                    st.toast(f"🗑️ {silinen['urun_adi']} silindi", icon="🗑️", duration=5000)
+                    st.toast(f"🗑️ {guvenli_html(silinen['urun_adi'])} silindi", icon="🗑️", duration=5000)
                     st.rerun()
         else:
             st.info("Düzenlenecek ürün yok.")
@@ -545,7 +540,7 @@ def satis_sayfasi():
     if not satilabilir:
         st.warning("Satılabilecek stokta ürün bulunmuyor.")
         return
-    urun_secenekleri = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat',0):.2f} ₺)" for u in satilabilir]
+    urun_secenekleri = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat',0):.2f} ₺)" for u in satilabilir]
     secili_str = st.selectbox("Ürün Seçin", urun_secenekleri)
     secili_idx = urun_secenekleri.index(secili_str)
     secili_urun = satilabilir[secili_idx]
@@ -583,7 +578,7 @@ def satis_sayfasi():
                                 "durum": "Bekliyor",
                                 "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
                             })
-                            st.warning(f"⚠️ {urun['urun_adi']} kritik stok altına düştü! Otomatik sipariş fişi eklendi.")
+                            st.warning(f"⚠️ {guvenli_html(urun['urun_adi'])} kritik stok altına düştü! Otomatik sipariş fişi eklendi.")
                     break
             satis_kaydet(secili_urun["urun_adi"], secili_urun["birim"], miktar, birim_fiyat, toplam_tutar,
                          st.session_state.current_user["kullanici_adi"] if st.session_state.current_user else "kasiyer")
@@ -605,7 +600,7 @@ def siparis_sayfasi():
                 col1, col2 = st.columns([4,1])
                 with col1:
                     aciliyet_renk = "🟢" if "Düşük" in row['aciliyet'] else "🟡" if "Orta" in row['aciliyet'] else "🔴"
-                    st.write(f"{aciliyet_renk} **{row['urun_adi']}** – {row['miktar']} {row['birim']} – {row['durum']}")
+                    st.write(f"{aciliyet_renk} **{guvenli_html(row['urun_adi'])}** – {row['miktar']} {row['birim']} – {row['durum']}")
                 with col2:
                     if st.button("🗑️ Sil", key=f"sil_fire_{i}"):
                         st.session_state.fire.pop(i)
@@ -739,24 +734,19 @@ def main():
     with st.sidebar:
         st.markdown("""
         <div style="text-align: center; padding: 20px 0;">
-            <h2 style="color: white; margin-bottom: 5px;">🏪 Market Yönetim</h2>
-            <p style="color: #94A3B8; font-size: 0.9rem;">Stok Takip Sistemi v2.0</p>
+            <h2 style="color: white;">🏪 Market Yönetim</h2>
+            <p style="color: #94A3B8;">v2.0 • Güvenli</p>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("---")
         if st.session_state.current_user:
             st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; margin-bottom: 20px;">
-                <p style="color: white; margin: 0;">👤 {st.session_state.current_user.get('ad', 'Kullanıcı')}</p>
-                <p style="color: #94A3B8; margin: 0; font-size: 0.8rem;">{st.session_state.current_user.get('rol', '')}</p>
+            <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 10px;">
+                <p style="color: white;">👤 {st.session_state.current_user.get('ad', 'Kullanıcı')}</p>
+                <p style="color: #94A3B8; font-size: 0.8rem;">{st.session_state.current_user.get('rol', '')}</p>
             </div>
             """, unsafe_allow_html=True)
-        sayfa = st.radio(
-            "Menü",
-            ["🏠 Ana Panel", "📱 Barkod", "💵 Satış", "📦 Stok", 
-             "🔥 Sipariş", "📉 Fire Analizi", "📊 Satış Raporu", "💾 Yedekleme"],
-            label_visibility="collapsed"
-        )
+        sayfa = st.radio("Menü", ["🏠 Ana Panel", "📱 Barkod", "💵 Satış", "📦 Stok", "🔥 Sipariş", "📉 Fire Analizi", "📊 Satış Raporu", "💾 Yedekleme"], label_visibility="collapsed")
         st.markdown("---")
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             cikis_yap()
