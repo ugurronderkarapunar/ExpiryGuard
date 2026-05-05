@@ -1,6 +1,7 @@
 """
 Market Yönetim Sistemi - Stok, satış, barkod okutma, SKT takibi,
-tedarikçi yönetimi, kâr marjı analizi ve daha fazlası.
+tedarikçi yönetimi, kâr marjı analizi, tema desteği, sesli uyarı,
+hızlı satış, anlık uyarı bandı, günlük kasa kapanışı, şifre sıfırlama.
 """
 
 import streamlit as st
@@ -17,6 +18,7 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 import time
+from fpdf import FPDF
 
 # ---------------------------- LOGLAMA --------------------------------
 logging.basicConfig(filename='app.log', level=logging.INFO,
@@ -48,7 +50,6 @@ VARSAYILAN_CONFIG = {
 }
 
 def load_config() -> dict:
-    """Konfigürasyon dosyasını yükler, yoksa varsayılanı döner."""
     if os.path.exists(CONFIG_DOSYASI):
         try:
             with open(CONFIG_DOSYASI, "r", encoding="utf-8") as f:
@@ -73,86 +74,113 @@ SKT_UYARI_GUN = config.get("skt_uyari_gun", 3)
 
 # ---------------------------- GÜVENLİ HTML ---------------------------
 def guvenli_html(metin: str) -> str:
-    """Kullanıcı girdisini HTML enjeksiyonlarına karşı korur."""
     return (str(metin).replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;")
             .replace("'", "&#x27;"))
 
-# ---------------------------- MODERN CSS (MOBİL UYUMLU) --------------
+# ---------------------------- TEMA YÖNETİMİ ---------------------------
+def tema_degistir(tema: str) -> None:
+    """Kullanıcının seçtiği temayı uygular."""
+    st.session_state.tema = tema
+
+# ---------------------------- MODERN CSS (TEMALI, MOBİL UYUMLU) -------
 def enerjik_css() -> None:
-    """Enerjik ve koyu tema CSS stillerini sayfaya enjekte eder."""
-    st.markdown("""
+    tema = st.session_state.get("tema", "Koyu")
+    if tema == "Koyu":
+        bg = "#0B1121"
+        card = "#141B2D"
+        text = "#E2E8F0"
+        header_bg = "#141B2D"
+        metric_bg = "linear-gradient(145deg, #1a1f35, #0f1424)"
+        input_bg = "#141B2D"
+    else:
+        bg = "#F8FAFC"
+        card = "#FFFFFF"
+        text = "#1E293B"
+        header_bg = "#F1F5F9"
+        metric_bg = "linear-gradient(145deg, #E2E8F0, #CBD5E1)"
+        input_bg = "#FFFFFF"
+    st.markdown(f"""
     <style>
-        .stApp { background-color: #0B1121 !important; }
-        .main { color: #E2E8F0; }
-        header[data-testid="stHeader"] { background-color: #141B2D; }
-        section[data-testid="stSidebar"] { background-color: #141B2D; }
-        section[data-testid="stSidebar"] .stRadio label { color: #E2E8F0 !important; font-weight: 600; }
-        div[data-testid="stMetric"] {
-            background: linear-gradient(145deg, #1a1f35, #0f1424);
-            border: 1px solid #2D3748;
+        .stApp {{ background-color: {bg} !important; }}
+        .main {{ color: {text}; }}
+        header[data-testid="stHeader"] {{ background-color: {header_bg}; }}
+        section[data-testid="stSidebar"] {{ background-color: {header_bg}; }}
+        section[data-testid="stSidebar"] .stRadio label {{ color: {text} !important; font-weight: 600; }}
+        div[data-testid="stMetric"] {{
+            background: {metric_bg};
+            border: 1px solid #94A3B8;
             border-radius: 20px;
             padding: 24px;
-            color: #FFFFFF;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-        }
-        div[data-testid="stMetric"] label { color: #CBD5E1 !important; font-weight: 600; }
-        div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2.2rem; }
-        h1, h2, h3, h4, h5, h6 { color: #F1F5F9; }
-        p, span, label { color: #E2E8F0; }
-        .stButton > button {
+            color: {text};
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }}
+        div[data-testid="stMetric"] label {{ color: #64748B !important; font-weight: 600; }}
+        div[data-testid="stMetric"] div[data-testid="stMetricValue"] {{ color: {text} !important; font-size: 2.2rem; }}
+        h1, h2, h3, h4, h5, h6 {{ color: {text}; font-weight: 700; }}
+        p, span, label {{ color: {text}; }}
+        .stButton > button {{
             border-radius: 14px; font-weight: 700;
             background: linear-gradient(135deg, #F97316, #8B5CF6);
             color: white; border: none; padding: 0.7rem 2rem;
             box-shadow: 0 5px 15px rgba(249,115,22,0.5);
-        }
-        .stButton > button:hover {
+        }}
+        .stButton > button:hover {{
             background: linear-gradient(135deg, #ea580c, #7c3aed);
             box-shadow: 0 8px 25px rgba(249,115,22,0.7);
-        }
-        input, select, textarea {
-            background-color: #141B2D !important;
-            color: #FFFFFF !important;
-            border: 1px solid #4B5563 !important;
+        }}
+        input, select, textarea {{
+            background-color: {input_bg} !important;
+            color: {text} !important;
+            border: 1px solid #94A3B8 !important;
             border-radius: 10px !important;
-        }
-        input::placeholder { color: #9CA3AF !important; }
-        .stDataFrame {
-            border-radius: 18px; overflow: hidden; border: 1px solid #2D3748; background-color: #141B2D;
-        }
-        .stDataFrame th { background-color: #1E293B; color: #FFFFFF; }
-        .stDataFrame td { background-color: #141B2D; color: #E2E8F0; }
-        .custom-container {
-            background-color: #141B2D; border-radius: 24px; padding: 30px;
-            border: 1px solid #2D3748; box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+        }}
+        .stDataFrame {{
+            border-radius: 18px; overflow: hidden; border: 1px solid #94A3B8; background-color: {card};
+        }}
+        .stDataFrame th {{ background-color: #E2E8F0; color: #1E293B; }}
+        .stDataFrame td {{ background-color: {card}; color: {text}; }}
+        .custom-container {{
+            background-color: {card}; border-radius: 24px; padding: 30px;
+            border: 1px solid #94A3B8; box-shadow: 0 15px 30px rgba(0,0,0,0.1);
             margin-bottom: 25px;
-        }
-        .main-header {
+        }}
+        .main-header {{
             font-size: 2.3rem; font-weight: 800;
             background: linear-gradient(135deg, #F97316, #8B5CF6);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             margin-bottom: 1.5rem; padding-bottom: 0.5rem;
             border-bottom: 2px solid #F97316;
-        }
-        div[data-testid="stToast"] {
-            background-color: #141B2D !important; color: #FFFFFF !important;
+        }}
+        div[data-testid="stToast"] {{
+            background-color: {card} !important; color: {text} !important;
             border-left: 4px solid #F97316;
-        }
-        @media (max-width: 768px) {
-            .custom-container { padding: 12px !important; margin: 8px 0 !important; }
-            .main-header { font-size: 1.4rem !important; }
-            .stButton > button { width: 100% !important; padding: 12px !important; font-size: 16px !important; }
-            input, select, textarea { font-size: 16px !important; }
-            .stDataFrame { font-size: 12px; }
-        }
+        }}
+        .sticky-alert {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: #EF4444;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-weight: bold;
+            z-index: 9999;
+        }}
+        @media (max-width: 768px) {{
+            .custom-container {{ padding: 12px !important; margin: 8px 0 !important; }}
+            .main-header {{ font-size: 1.4rem !important; }}
+            .stButton > button {{ width: 100% !important; padding: 12px !important; font-size: 16px !important; }}
+            input, select, textarea {{ font-size: 16px !important; }}
+        }}
     </style>
     """, unsafe_allow_html=True)
 
 # ---------------------------- DOSYA İŞLEMLERİ -----------------------
 def dosya_oku(dosya_adi: str, varsayilan=None):
-    """JSON dosyasını okur, yoksa varsayılanı döner."""
     if os.path.exists(dosya_adi):
         try:
             with open(dosya_adi, "r", encoding="utf-8") as f:
@@ -162,7 +190,6 @@ def dosya_oku(dosya_adi: str, varsayilan=None):
     return varsayilan if varsayilan is not None else []
 
 def dosya_yaz(dosya_adi: str, veri) -> bool:
-    """Veriyi JSON dosyasına yazar."""
     try:
         with open(dosya_adi, "w", encoding="utf-8") as f:
             json.dump(veri, f, ensure_ascii=False, indent=2)
@@ -172,7 +199,6 @@ def dosya_yaz(dosya_adi: str, veri) -> bool:
 
 # ---------------------------- VERİ GEÇİŞ KONTROL --------------------
 def veri_gecis_kontrol() -> None:
-    """Eski veri formatlarını güncel alanlarla tamamlar."""
     degisti = False
     for u in st.session_state.stok:
         for k, v in [("kategori", "Diğer"), ("min_miktar", 0), ("barkod", ""),
@@ -195,7 +221,6 @@ def veri_gecis_kontrol() -> None:
 
 # ---------------------------- MOCK VERİ -----------------------------
 def mock_stok_olustur() -> list:
-    """Demo amaçlı başlangıç stok verilerini oluşturur."""
     return [
         {"urun_adi": "Un", "miktar": 150, "birim": "kg", "kategori": "Kuru Gıda",
          "min_miktar": 20, "barkod": "8691234567890", "son_kullanma_tarihi": "2026-12-31",
@@ -220,7 +245,6 @@ def mock_stok_olustur() -> list:
     ]
 
 def mock_fire_olustur() -> list:
-    """Demo fire (sipariş) verilerini oluşturur."""
     return [
         {"urun_adi": "Un", "miktar": 10, "birim": "kg", "aciliyet": "🔥 Yüksek",
          "tedarikci": "ABC Un Fabrikası", "durum": "Bekliyor",
@@ -234,7 +258,6 @@ def mock_fire_olustur() -> list:
     ]
 
 def mock_barkod_db_olustur() -> dict:
-    """Demo barkod veritabanını oluşturur."""
     return {
         "8691234567890": {"urun_adi": "Un", "birim": "kg", "kategori": "Kuru Gıda", "uretici": "ABC Un Fabrikası"},
         "8691234567891": {"urun_adi": "Şeker", "birim": "kg", "kategori": "Kuru Gıda", "uretici": "XYZ Şeker"},
@@ -245,7 +268,6 @@ def mock_barkod_db_olustur() -> dict:
 
 # ---------------------------- HAREKET KAYDI -------------------------
 def hareket_ekle(kul: str, islem: str, ad: str, detay: str = "") -> None:
-    """Hareket kaydını JSON dosyasına ekler."""
     h = {"tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kullanici": kul, "islem": islem,
          "urun_adi": ad, "detay": detay}
     liste = dosya_oku(HAREKET_DOSYASI, [])
@@ -255,7 +277,6 @@ def hareket_ekle(kul: str, islem: str, ad: str, detay: str = "") -> None:
     dosya_yaz(HAREKET_DOSYASI, liste)
 
 def satis_kaydet(ad: str, birim: str, miktar: float, fiyat: float, tutar: float, kul: str) -> None:
-    """Satış kaydını JSON dosyasına ekler."""
     s = {"id": str(uuid.uuid4())[:8], "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
          "kullanici": kul, "urun_adi": ad, "birim": birim, "miktar": miktar,
          "birim_fiyat": fiyat, "toplam_tutar": tutar}
@@ -264,14 +285,20 @@ def satis_kaydet(ad: str, birim: str, miktar: float, fiyat: float, tutar: float,
     dosya_yaz(SATIS_DOSYASI, liste)
 
 def bugunku_satis() -> float:
-    """Bugün yapılan toplam satış tutarını döner."""
     liste = dosya_oku(SATIS_DOSYASI, [])
     bugun = datetime.now().strftime("%Y-%m-%d")
     return sum(s["toplam_tutar"] for s in liste if s["tarih"].startswith(bugun))
 
+def en_cok_satanlar(n=5) -> list:
+    satislar = dosya_oku(SATIS_DOSYASI, [])
+    if not satislar:
+        return []
+    df = pd.DataFrame(satislar)
+    populer = df.groupby("urun_adi")["miktar"].sum().sort_values(ascending=False).head(n)
+    return populer.index.tolist()
+
 # ---------------------------- E-POSTA BİLDİRİMLERİ -------------------
 def email_gonder(alici: str, konu: str, mesaj: str) -> bool:
-    """Gmail SMTP ile e‑posta gönderir."""
     try:
         smtp_sunucu = "smtp.gmail.com"
         port = 587
@@ -292,7 +319,6 @@ def email_gonder(alici: str, konu: str, mesaj: str) -> bool:
         return False
 
 def skt_ve_kritik_stok_bildirimi() -> None:
-    """Yaklaşan SKT ve kritik stoklar için e‑posta bildirimi (günde 1 kez)."""
     if "bildirim_gonderildi" not in st.session_state:
         st.session_state.bildirim_gonderildi = False
     if not st.session_state.bildirim_gonderildi:
@@ -326,7 +352,6 @@ def skt_ve_kritik_stok_bildirimi() -> None:
 
 # ---------------------------- VERİ BİLİMİ FONKSİYONLARI ------------
 def urun_gunluk_satis_hizi(urun_adi: str, varsayilan: float = 1.0) -> float:
-    """Son 30 günlük satış verisine göre günlük ortalama satış hızını hesaplar."""
     satislar = dosya_oku(SATIS_DOSYASI, [])
     if not satislar:
         for u in st.session_state.stok:
@@ -351,7 +376,6 @@ def urun_gunluk_satis_hizi(urun_adi: str, varsayilan: float = 1.0) -> float:
     return sum(miktarlar) / len(miktarlar)
 
 def bilimsel_indirim_hesapla(urun: dict, kalan_gun: int) -> float:
-    """Stok fazlası ve kar marjına göre dinamik indirim oranı önerir."""
     if kalan_gun <= 0:
         satis_fiyat = urun.get("satis_fiyat", 10)
         alis_fiyat = urun.get("alis_fiyat", 5)
@@ -380,7 +404,6 @@ def bilimsel_indirim_hesapla(urun: dict, kalan_gun: int) -> float:
 
 # ---------------------------- OTURUM YÖNETİMİ -----------------------
 def oturumu_baslat() -> None:
-    """Session state değişkenlerini ilk yüklemede başlatır."""
     if "stok" not in st.session_state:
         st.session_state.stok = dosya_oku(STOK_DOSYASI, mock_stok_olustur())
     if "fire" not in st.session_state:
@@ -402,10 +425,11 @@ def oturumu_baslat() -> None:
         st.session_state.current_user = None
     if "last_activity" not in st.session_state:
         st.session_state.last_activity = datetime.now()
+    if "tema" not in st.session_state:
+        st.session_state.tema = "Koyu"
     veri_gecis_kontrol()
 
 def oturum_kontrol() -> None:
-    """Oturum süresini kontrol eder, aşımda çıkış yapar."""
     if st.session_state.authenticated:
         if datetime.now() - st.session_state.last_activity > timedelta(minutes=OTURUM_SURESI):
             st.session_state.authenticated = False
@@ -416,7 +440,6 @@ def oturum_kontrol() -> None:
 
 # ---------------------------- GİRİŞ --------------------------
 def giris_ekrani() -> None:
-    """Kullanıcı giriş arayüzünü sunar."""
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown(
@@ -442,16 +465,29 @@ def giris_ekrani() -> None:
                     st.error("❌ Hatalı giriş!")
 
 def cikis() -> None:
-    """Oturumu kapatır."""
     st.session_state.authenticated = False
     st.rerun()
 
 # ---------------------------- SAYFALAR --------------------------
 def ana_sayfa() -> None:
-    """Yönetim paneli: kritik stoklar, SKT uyarıları, KPI kartları."""
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
     skt_ve_kritik_stok_bildirimi()
     kritik = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u["min_miktar"]]
+    # Anlık uyarı bandı
+    if kritik:
+        st.markdown("""
+        <div class="sticky-alert">
+            ⚠️ KRİTİK STOK UYARISI: Bazı ürünler minimum seviyenin altında! Depoyu kontrol edin.
+        </div>
+        """, unsafe_allow_html=True)
+        # Sesli uyarı (günde bir kez)
+        if "sesli_uyari_verildi" not in st.session_state:
+            st.session_state.sesli_uyari_verildi = False
+        if not st.session_state.sesli_uyari_verildi:
+            st.markdown('<audio autoplay><source src="https://www.soundjay.com/buttons/sounds/button-10.mp3" type="audio/mpeg"></audio>', unsafe_allow_html=True)
+            st.session_state.sesli_uyari_verildi = True
+    else:
+        st.session_state.sesli_uyari_verildi = False
     skt = []
     bugun = datetime.now().date()
     for u in st.session_state.stok:
@@ -475,7 +511,6 @@ def ana_sayfa() -> None:
         st.subheader("🚨 Kritik Stoklar")
         for u in kritik[:5]:
             st.error(f"{guvenli_html(u['urun_adi'])}: {u['miktar']:.2f} {u['birim']}")
-        # Anlık bildirim (balonlar)
         st.balloons()
     if skt:
         st.subheader("⏰ Yaklaşan SKT (Bilimsel İndirim)")
@@ -484,7 +519,6 @@ def ana_sayfa() -> None:
             st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → Önerilen İndirim: %{oneri}")
 
 def barkod_sayfasi() -> None:
-    """Barkod okutma (manuel, mobil kamera) ve stok giriş/çıkış."""
     st.markdown('<div class="main-header">📱 Barkod Okutma</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
@@ -564,7 +598,6 @@ def barkod_sayfasi() -> None:
                     st.rerun()
 
 def stok_sayfasi() -> None:
-    """Stok listeleme, manuel ekleme, düzenleme/silme, stok sayımı."""
     st.markdown('<div class="main-header">📦 Stok Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         ["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil", "🔢 Stok Sayım", "📥 Toplu Güncelle"]
@@ -722,16 +755,29 @@ def stok_sayfasi() -> None:
                 st.error(f"CSV işlenirken hata: {e}")
 
 def satis_sayfasi() -> None:
-    """POS satış ekranı."""
     st.markdown('<div class="main-header">💰 Satış (POS)</div>', unsafe_allow_html=True)
     satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
     if not satilabilir:
         st.warning("Satılacak ürün yok")
         return
-    secenekler = [
-        f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u
-        in satilabilir]
-    # QR hızlı satış: mobil kamera ile okuma
+    # Hızlı satış kısayolları
+    populer = en_cok_satanlar(5)
+    if populer:
+        st.subheader("⚡ En Çok Satanlar (Hızlı Satış)")
+        kisa_sutun = st.columns(len(populer))
+        for i, urun_adi in enumerate(populer):
+            urun = next((u for u in satilabilir if u["urun_adi"] == urun_adi), None)
+            if urun:
+                with kisa_sutun[i]:
+                    if st.button(f"🛒 {urun['urun_adi']}\n1 {urun['birim']}", key=f"hizli_{urun_adi}"):
+                        urun["miktar"] -= 1
+                        satis_kaydet(urun["urun_adi"], urun["birim"], 1, urun.get("satis_fiyat", 0),
+                                     urun.get("satis_fiyat", 0),
+                                     st.session_state.current_user["kullanici_adi"])
+                        veriyi_kaydet()
+                        st.session_state.son_islem_mesaji = f"✅ Hızlı satış: {urun['urun_adi']}"
+                        st.rerun()
+    # QR hızlı satış
     with st.expander("📷 QR ile Hızlı Satış (Mobil Kamera)", expanded=False):
         qr_img = st.camera_input("QR / Barkod okut", key="qr_satis")
         if qr_img:
@@ -741,11 +787,9 @@ def satis_sayfasi() -> None:
                 detector = cv2.QRCodeDetector()
                 data, _, _ = detector.detectAndDecode(img)
                 if data:
-                    # barkoda göre ürünü bul ve otomatik satış yap
                     for u in satilabilir:
                         if u.get("barkod") == data:
                             st.success(f"✅ {u['urun_adi']} bulundu, sepete eklendi.")
-                            # burada direkt satış yapmayıp sepete eklenebilir, şimdilik direkt 1 adet satış
                             u["miktar"] -= 1
                             satis_kaydet(u["urun_adi"], u["birim"], 1, u.get("satis_fiyat", 0),
                                          u.get("satis_fiyat", 0),
@@ -758,9 +802,10 @@ def satis_sayfasi() -> None:
                     st.warning("QR kod çözülemedi.")
             except Exception as e:
                 st.error(f"Kamera hatası: {e}")
-
-    secili_str = st.selectbox("Ürün Seçin", secenekler)
-    idx = secenekler.index(secili_str)
+    secili_str = st.selectbox("Ürün Seçin", [
+        f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u
+        in satilabilir])
+    idx = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir].index(secili_str)
     urun = satilabilir[idx]
     fiyat = urun.get("satis_fiyat", 0)
     mevcut = urun["miktar"]
@@ -803,7 +848,6 @@ def satis_sayfasi() -> None:
             st.rerun()
 
 def tedarikci_sayfasi() -> None:
-    """Tedarikçi yönetimi: listeleme ve ekleme."""
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
     with tab1:
@@ -826,7 +870,6 @@ def tedarikci_sayfasi() -> None:
                 st.rerun()
 
 def stok_analizi() -> None:
-    """Kâr marjı raporu ve stok devir hızı analizi."""
     st.markdown('<div class="main-header">📈 Stok Analizi</div>', unsafe_allow_html=True)
     if not st.session_state.stok:
         st.info("Henüz ürün yok.")
@@ -846,7 +889,6 @@ def stok_analizi() -> None:
         st.write(f"{u['urun_adi']}: {hiz:.2f} {u['birim']}/gün")
 
 def siparis_sayfasi() -> None:
-    """Sipariş (fire) panosu."""
     st.markdown('<div class="main-header">🔥 Sipariş Panosu</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
     with tab1:
@@ -879,7 +921,6 @@ def siparis_sayfasi() -> None:
                 st.rerun()
 
 def fire_analizi() -> None:
-    """Kategori bazlı fire analizi grafiği."""
     st.markdown('<div class="main-header">📉 Fire Analizi</div>', unsafe_allow_html=True)
     if st.session_state.fire:
         kat_fire = {}
@@ -894,7 +935,6 @@ def fire_analizi() -> None:
         st.info("Fire kaydı yok.")
 
 def satis_raporu() -> None:
-    """Satış raporu: günlük, aylık, ürün bazlı, kâr marjı."""
     st.markdown('<div class="main-header">📊 Satış Raporu</div>', unsafe_allow_html=True)
     satislar = dosya_oku(SATIS_DOSYASI, [])
     if not satislar:
@@ -947,7 +987,6 @@ def satis_raporu() -> None:
         ), use_container_width=True)
 
 def aktivite_logu() -> None:
-    """Kullanıcı hareketlerini tarih filtreli olarak listeler."""
     st.markdown('<div class="main-header">📋 Aktivite Logu</div>', unsafe_allow_html=True)
     hareketler = dosya_oku(HAREKET_DOSYASI, [])
     if not hareketler:
@@ -963,8 +1002,40 @@ def aktivite_logu() -> None:
     mask = (df["tarih"].dt.date >= baslangic) & (df["tarih"].dt.date <= bitis)
     st.dataframe(df[mask].sort_values("tarih", ascending=False), use_container_width=True)
 
+def kasa_kapanisi() -> None:
+    st.markdown('<div class="main-header">🧾 Günlük Kasa Kapanışı</div>', unsafe_allow_html=True)
+    bugun = datetime.now().strftime("%Y-%m-%d")
+    satislar = [s for s in dosya_oku(SATIS_DOSYASI, []) if s["tarih"].startswith(bugun)]
+    if not satislar:
+        st.info("Bugün henüz satış yapılmamış.")
+        return
+    toplam_satis = sum(s["toplam_tutar"] for s in satislar)
+    urun_adedi = sum(s["miktar"] for s in satislar)
+    df = pd.DataFrame(satislar)
+    st.subheader("📋 Satış Detayı")
+    st.dataframe(df[["urun_adi", "miktar", "birim_fiyat", "toplam_tutar"]], use_container_width=True)
+    st.metric("Toplam Satış", f"{toplam_satis:.2f} ₺")
+    st.metric("Satılan Ürün Adedi", urun_adedi)
+    # PDF çıktı
+    if st.button("📄 PDF Kapanış Raporu İndir"):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=f"Günlük Kasa Kapanışı - {bugun}", ln=True, align='C')
+        pdf.ln(10)
+        for _, row in df.iterrows():
+            pdf.cell(50, 10, txt=row["urun_adi"], border=1)
+            pdf.cell(30, 10, txt=str(row["miktar"]), border=1)
+            pdf.cell(30, 10, txt=f"{row['birim_fiyat']} ₺", border=1)
+            pdf.cell(30, 10, txt=f"{row['toplam_tutar']} ₺", border=1)
+            pdf.ln()
+        pdf.ln(10)
+        pdf.cell(200, 10, txt=f"Toplam: {toplam_satis:.2f} ₺", ln=True)
+        pdf.output("kasa_kapanis.pdf")
+        with open("kasa_kapanis.pdf", "rb") as f:
+            st.download_button("📥 PDF İndir", f.read(), "kasa_kapanis.pdf")
+
 def kullanici_yonetimi() -> None:
-    """Patronun yeni kullanıcı ekleyebileceği arayüz."""
     st.markdown('<div class="main-header">👥 Kullanıcı Yönetimi</div>', unsafe_allow_html=True)
     with st.form("kullanici_ekle"):
         yeni_kul = st.text_input("Kullanıcı Adı")
@@ -983,8 +1054,41 @@ def kullanici_yonetimi() -> None:
                 st.session_state.son_islem_mesaji = f"✅ {yeni_kul} eklendi"
                 st.rerun()
 
+def sifre_sifirla() -> None:
+    st.markdown('<div class="main-header">🔑 Şifre Sıfırlama</div>', unsafe_allow_html=True)
+    with st.form("sifre_sifirla"):
+        eski_sifre = st.text_input("Eski Şifre", type="password")
+        yeni_sifre = st.text_input("Yeni Şifre", type="password")
+        yeni_sifre2 = st.text_input("Yeni Şifre (Tekrar)", type="password")
+        if st.form_submit_button("Sıfırla"):
+            admin_pass = config.get("sifre", "1234")
+            try:
+                admin_pass = st.secrets["admin"]["sifre"]
+            except:
+                pass
+            if eski_sifre != admin_pass:
+                st.error("Eski şifre yanlış.")
+            elif yeni_sifre != yeni_sifre2:
+                st.error("Yeni şifreler eşleşmiyor.")
+            elif len(yeni_sifre) < 4:
+                st.error("Şifre en az 4 karakter olmalı.")
+            else:
+                config["sifre"] = yeni_sifre
+                dosya_yaz(CONFIG_DOSYASI, config)
+                # secrets dosyası varsa güncelle
+                try:
+                    secrets_path = os.path.join(".streamlit", "secrets.toml")
+                    with open(secrets_path, "r") as f:
+                        secrets = f.read()
+                    secrets = secrets.replace(f'"{admin_pass}"', f'"{yeni_sifre}"')
+                    with open(secrets_path, "w") as f:
+                        f.write(secrets)
+                except:
+                    pass
+                st.session_state.son_islem_mesaji = "✅ Şifre güncellendi, lütfen yeni şifre ile giriş yapın."
+                st.rerun()
+
 def ayarlar_sayfasi() -> None:
-    """Uygulama ayarları: patron e‑postası, e‑posta testi."""
     st.markdown('<div class="main-header">⚙️ Ayarlar</div>', unsafe_allow_html=True)
     with st.form("ayarlar_form"):
         eposta = st.text_input("Patron E‑posta (bildirimler için)", 
@@ -1007,8 +1111,17 @@ def ayarlar_sayfasi() -> None:
             else:
                 st.error("E‑posta gönderilemedi. SMTP ayarlarını kontrol edin.")
 
+def geri_bildirim() -> None:
+    st.markdown('<div class="main-header">💬 Geri Bildirim</div>', unsafe_allow_html=True)
+    with st.form("geribildirim"):
+        konu = st.text_input("Konu")
+        mesaj = st.text_area("Görüş ve önerileriniz")
+        if st.form_submit_button("Gönder"):
+            logging.info(f"Geri Bildirim: {konu} - {mesaj}")
+            st.session_state.son_islem_mesaji = "✅ Geri bildiriminiz için teşekkürler!"
+            st.rerun()
+
 def yedekleme_sayfasi() -> None:
-    """Yedek alma ve yükleme."""
     st.markdown('<div class="main-header">💾 Yedekleme</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
@@ -1029,7 +1142,6 @@ def yedekleme_sayfasi() -> None:
             st.rerun()
 
 def veriyi_kaydet() -> None:
-    """Tüm temel verileri JSON dosyalarına yazar."""
     dosya_yaz(STOK_DOSYASI, st.session_state.stok)
     dosya_yaz(FIRE_DOSYASI, st.session_state.fire)
     dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
@@ -1046,28 +1158,27 @@ SAYFALAR = {
     "📉 Fire Analizi": fire_analizi,
     "📊 Satış Raporu": satis_raporu,
     "📋 Aktivite Logu": aktivite_logu,
+    "🧾 Kasa Kapanışı": kasa_kapanisi,
     "👥 Kullanıcı Yönetimi": kullanici_yonetimi,
+    "🔑 Şifre Sıfırlama": sifre_sifirla,
+    "💬 Geri Bildirim": geri_bildirim,
     "⚙️ Ayarlar": ayarlar_sayfasi,
     "💾 Yedekleme": yedekleme_sayfasi,
 }
 
 # ---------------------------- ANA UYGULAMA --------------------------
 def main() -> None:
-    """Uygulamanın ana giriş noktası."""
     st.set_page_config(page_title="Market Yönetim", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
+    oturumu_baslat()
     enerjik_css()
     pd.set_option('display.float_format', '{:.2f}'.format)
-    oturumu_baslat()
     oturum_kontrol()
     if not st.session_state.authenticated:
         giris_ekrani()
         return
-
-    # Başarı mesajı gösterimi
     if st.session_state.son_islem_mesaji:
         st.success(st.session_state.son_islem_mesaji)
         st.session_state.son_islem_mesaji = ""
-
     with st.sidebar:
         st.markdown('<h2 style="color:white;">🏪 Market</h2>', unsafe_allow_html=True)
         st.markdown('<p style="color:#F97316;">v2.0 Tam Paket</p>', unsafe_allow_html=True)
@@ -1075,10 +1186,11 @@ def main() -> None:
             st.markdown(
                 f'<div style="background:rgba(249,115,22,0.2);border-radius:12px;padding:12px;"><p style="color:white;">👤 {st.session_state.current_user.get("ad", "Kullanıcı")}</p></div>',
                 unsafe_allow_html=True)
+        tema_sec = st.selectbox("Tema", ["Koyu", "Aydınlık"], index=0 if st.session_state.tema == "Koyu" else 1,
+                                on_change=tema_degistir, args=(st.session_state.tema,))
         sayfa = st.radio("Menü", list(SAYFALAR.keys()), label_visibility="collapsed")
         if st.button("🚪 Çıkış", use_container_width=True):
             cikis()
-    # Seçili sayfayı çağır
     SAYFALAR[sayfa]()
 
 if __name__ == "__main__":
