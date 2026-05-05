@@ -5,3 +5,4 @@ openpyxl
 opencv-python-headless
 numpy
 streamlit-lottie
+fpdf2
