@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import logging
+from io import BytesIO
 
 # ---------------------------- LOGLAMA --------------------------------
 logging.basicConfig(
@@ -70,14 +71,20 @@ def dosya_yaz(dosya_adi, veri):
 
 # ---------------------------- VERİ GEÇİŞ KONTROL --------------------
 def veri_gecis_kontrol():
-    """Eski veri formatını yeni alanlarla günceller."""
+    """Eski formatı yeni alanlarla günceller (stok ve fire)."""
     degisti = False
+    # Stok için
     for urun in st.session_state.stok:
         if "kategori" not in urun:
             urun["kategori"] = "Diğer"
             degisti = True
         if "min_miktar" not in urun:
             urun["min_miktar"] = 0
+            degisti = True
+    # Fire için (sipariş)
+    for siparis in st.session_state.fire:
+        if "birim" not in siparis:
+            siparis["birim"] = "adet"  # eski kayıtları varsayılan adet yapalım
             degisti = True
     if degisti:
         veriyi_kaydet()
@@ -94,9 +101,9 @@ def mock_stok_olustur():
 
 def mock_fire_olustur():
     return [
-        {"urun_adi": "Un", "adet": 10, "aciliyet": "🔥 Yüksek"},
-        {"urun_adi": "Şeker", "adet": 5, "aciliyet": "⚡ Orta"},
-        {"urun_adi": "Yumurta", "adet": 50, "aciliyet": "✅ Düşük"},
+        {"urun_adi": "Un", "miktar": 10, "birim": "kg", "aciliyet": "🔥 Yüksek"},
+        {"urun_adi": "Şeker", "miktar": 5, "birim": "kg", "aciliyet": "⚡ Orta"},
+        {"urun_adi": "Yumurta", "miktar": 50, "birim": "adet", "aciliyet": "✅ Düşük"},
     ]
 
 # ---------------------------- HAREKET KAYDI -------------------------
@@ -124,13 +131,12 @@ def oturumu_baslat():
         st.session_state.last_activity = datetime.now()
     if "config" not in st.session_state:
         st.session_state.config = config
-    veri_gecis_kontrol()  # eski verileri güncelle
+    veri_gecis_kontrol()
 
 def oturum_kontrol():
     if st.session_state.authenticated:
         now = datetime.now()
-        fark = now - st.session_state.last_activity
-        if fark > timedelta(minutes=OTURUM_SURESI):
+        if now - st.session_state.last_activity > timedelta(minutes=OTURUM_SURESI):
             st.session_state.authenticated = False
             st.warning("⏳ Oturum süresi doldu. Lütfen tekrar giriş yapın.")
             st.rerun()
@@ -151,7 +157,6 @@ def giris_ekrani():
             else:
                 st.error("❌ Hatalı kullanıcı adı veya şifre!")
 
-# ---------------------------- ÇIKIŞ -------------------------------
 def cikis_yap():
     st.session_state.authenticated = False
     st.rerun()
@@ -173,7 +178,7 @@ def ana_sayfa():
         for urun in kritik_urunler:
             st.error(f"{urun['urun_adi']}: {urun['miktar']} {urun['birim']} (Minimum: {urun['min_miktar']})")
 
-# ---------------------------- STOK SAYFASI (GÜNCELLENMİŞ) ----------
+# ---------------------------- STOK SAYFASI --------------------------
 def stok_sayfasi():
     st.header("📦 Stok Yönetimi")
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil", "📊 Grafikler", "📥 Toplu Yükleme"])
@@ -182,7 +187,6 @@ def stok_sayfasi():
         st.subheader("Stok Listesi")
         arama = st.text_input("Ürün Ara", key="stok_arama")
         kategori_sec = st.selectbox("Kategori Filtrele", ["Tümü"] + KATEGORILER, key="stok_kategori")
-        
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
             if kategori_sec != "Tümü":
@@ -194,18 +198,16 @@ def stok_sayfasi():
                 if min_m > 0 and row["miktar"] <= min_m:
                     return ['background-color: #ffcccc'] * len(row)
                 return [''] * len(row)
-            
             styled_df = df.style.apply(highlight_critical, axis=1)
             st.dataframe(styled_df, use_container_width=True)
         else:
             st.info("Gösterilecek ürün yok.")
-        
         if st.button("🔄 Mock Veriye Sıfırla", key="sifirla_stok"):
             st.session_state.stok = mock_stok_olustur()
             veriyi_kaydet()
             st.toast("Stok mock verilerle sıfırlandı.", icon="🔄")
             st.rerun()
-    
+
     with tab2:
         with st.form("urun_ekle_form"):
             urun_adi = st.text_input("Ürün Adı")
@@ -217,19 +219,18 @@ def stok_sayfasi():
                 if not urun_adi.strip():
                     st.error("Ürün adı boş olamaz!")
                 else:
-                    yeni_urun = {
+                    st.session_state.stok.append({
                         "urun_adi": urun_adi.strip(),
                         "miktar": miktar,
                         "birim": birim,
                         "kategori": kategori,
                         "min_miktar": min_miktar
-                    }
-                    st.session_state.stok.append(yeni_urun)
+                    })
                     veriyi_kaydet()
                     hareket_ekle(config["kullanici_adi"], "Ekleme", urun_adi, f"{miktar} {birim} eklendi")
                     st.toast(f"{urun_adi} stoğa eklendi.", icon="✅")
                     st.rerun()
-    
+
     with tab3:
         st.subheader("Düzenle veya Sil")
         if st.session_state.stok:
@@ -241,21 +242,18 @@ def stok_sayfasi():
                 yeni_ad = st.text_input("Ürün Adı", value=urun["urun_adi"])
                 yeni_miktar = st.number_input("Miktar", value=float(urun["miktar"]), min_value=0.0)
                 birimler = ["kg", "litre", "adet", "paket", "gram", "koli"]
-                mevcut_birim = urun.get("birim", "kg")
                 try:
-                    birim_index = birimler.index(mevcut_birim)
+                    birim_index = birimler.index(urun.get("birim", "kg"))
                 except ValueError:
                     birim_index = 0
                 yeni_birim = st.selectbox("Birim", birimler, index=birim_index)
-                mevcut_kategori = urun.get("kategori", "Diğer")
                 try:
-                    kat_index = KATEGORILER.index(mevcut_kategori)
+                    kat_index = KATEGORILER.index(urun.get("kategori", "Diğer"))
                 except ValueError:
                     kat_index = 0
                 yeni_kategori = st.selectbox("Kategori", KATEGORILER, index=kat_index)
                 yeni_min = st.number_input("Min. Stok", value=float(urun.get("min_miktar", 0)), min_value=0.0)
-                
-                col1, col2, col3 = st.columns([2,1,1])
+                col1, col2 = st.columns([2,1])
                 with col1:
                     if st.form_submit_button("💾 Kaydet"):
                         if not yeni_ad.strip():
@@ -275,8 +273,7 @@ def stok_sayfasi():
                 with col2:
                     with st.expander("🗑️ Sil", expanded=False):
                         st.warning("Bu işlem geri alınamaz!")
-                        onay = st.checkbox("Eminim, silmek istiyorum.", key=f"sil_onay_{idx}")
-                        if onay:
+                        if st.checkbox("Eminim, silmek istiyorum.", key=f"sil_onay_{idx}"):
                             if st.form_submit_button("⚠️ Silmeyi Onayla"):
                                 silinen = st.session_state.stok.pop(idx)
                                 veriyi_kaydet()
@@ -285,7 +282,7 @@ def stok_sayfasi():
                                 st.rerun()
         else:
             st.info("Düzenlenecek ürün yok.")
-    
+
     with tab4:
         st.subheader("Stok Dağılımı")
         if st.session_state.stok:
@@ -294,13 +291,11 @@ def stok_sayfasi():
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Grafik için veri yok.")
-    
+
     with tab5:
         st.subheader("CSV ile Toplu Ürün Yükleme")
-        st.markdown("Şablon dosyasını indirip doldurarak toplu yükleme yapabilirsiniz.")
         sablon_df = pd.DataFrame(columns=["urun_adi", "miktar", "birim", "kategori", "min_miktar"])
         st.download_button("📥 CSV Şablon İndir", sablon_df.to_csv(index=False), "stok_sablon.csv", "text/csv")
-        
         uploaded_file = st.file_uploader("CSV dosyası seçin", type="csv")
         if uploaded_file is not None:
             try:
@@ -318,16 +313,21 @@ def stok_sayfasi():
                 st.rerun()
             except Exception as e:
                 st.error(f"CSV yüklenirken hata: {e}")
-    
+
+    # Excel dışa aktarma düzeltmesi
     if st.session_state.stok:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            pd.DataFrame(st.session_state.stok).to_excel(writer, index=False, sheet_name='Stok')
+        excel_data = output.getvalue()
         st.download_button(
-            "📊 Stok Listesini Excel Olarak İndir",
-            pd.DataFrame(st.session_state.stok).to_excel(index=False, engine='openpyxl'),
-            "stok_listesi.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            label="📊 Stok Listesini Excel Olarak İndir",
+            data=excel_data,
+            file_name="stok_listesi.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# ---------------------------- SİPARİŞ PANOSU (GÜNCELLENMİŞ) ---------
+# ---------------------------- SİPARİŞ PANOSU (BİRİMLİ) --------------
 def siparis_sayfasi():
     st.header("🔥 Sipariş Panosu (Fire Takibi)")
     tab1, tab2, tab3 = st.tabs(["📋 Siparişler", "➕ Ekle", "✏️ Düzenle/Sil"])
@@ -338,6 +338,8 @@ def siparis_sayfasi():
         if not df.empty:
             if arama:
                 df = df[df["urun_adi"].str.contains(arama, case=False)]
+            # Gösterim: miktar + birim şeklinde birleştirelim
+            df["gorunum"] = df.apply(lambda r: f"{r['miktar']} {r['birim']} {r['urun_adi']}", axis=1)
             def format_aciliyet(val):
                 if "Yüksek" in val:
                     return '🔥 <span style="color:red; font-weight:bold">Yüksek</span>'
@@ -345,9 +347,8 @@ def siparis_sayfasi():
                     return '⚡ <span style="color:orange; font-weight:bold">Orta</span>'
                 else:
                     return '✅ <span style="color:green; font-weight:bold">Düşük</span>'
-            if "aciliyet" in df.columns:
-                df["aciliyet_gorsel"] = df["aciliyet"].apply(format_aciliyet)
-            st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+            df["aciliyet_gorsel"] = df["aciliyet"].apply(format_aciliyet)
+            st.write(df[["gorunum", "aciliyet_gorsel", "eklenme_tarihi"]].to_html(escape=False, index=False), unsafe_allow_html=True)
         else:
             st.info("Henüz sipariş eklenmemiş.")
         if st.button("🔄 Mock Siparişlere Sıfırla", key="sifirla_fire"):
@@ -359,11 +360,12 @@ def siparis_sayfasi():
         if not df.empty:
             fig = px.bar(df, x='aciliyet', title='Sipariş Aciliyet Durumları')
             st.plotly_chart(fig, use_container_width=True)
-    
+
     with tab2:
         with st.form("siparis_ekle_form"):
             urun_adi = st.text_input("Ürün Adı")
-            adet = st.number_input("Adet", min_value=1, step=1)
+            miktar = st.number_input("Miktar", min_value=0.01, step=0.01, value=1.0)
+            birim = st.selectbox("Birim", ["kg", "litre", "adet", "paket", "koli"])
             aciliyet = st.selectbox("Aciliyet", ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"])
             if st.form_submit_button("Ekle"):
                 if not urun_adi.strip():
@@ -371,28 +373,34 @@ def siparis_sayfasi():
                 else:
                     st.session_state.fire.append({
                         "urun_adi": urun_adi.strip(),
-                        "adet": int(adet),
+                        "miktar": miktar,
+                        "birim": birim,
                         "aciliyet": aciliyet,
                         "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
                     })
                     veriyi_kaydet()
-                    hareket_ekle(config["kullanici_adi"], "Sipariş Ekleme", urun_adi, f"{adet} adet {aciliyet}")
+                    hareket_ekle(config["kullanici_adi"], "Sipariş Ekleme", urun_adi, f"{miktar} {birim} {aciliyet}")
                     st.toast("Sipariş eklendi.", icon="🔥")
                     st.rerun()
-    
+
     with tab3:
         if st.session_state.fire:
-            siparis_str = [f"{s['urun_adi']} ({s['adet']} adet - {s['aciliyet']})" for s in st.session_state.fire]
+            siparis_str = [f"{s['miktar']} {s['birim']} {s['urun_adi']} ({s['aciliyet']})" for s in st.session_state.fire]
             secili_str = st.selectbox("Sipariş Seç", siparis_str, key="siparis_duzenle")
             idx = siparis_str.index(secili_str)
             siparis = st.session_state.fire[idx]
             with st.form("siparis_duzenle_form"):
                 yeni_ad = st.text_input("Ürün Adı", value=siparis["urun_adi"])
-                yeni_adet = st.number_input("Adet", value=int(siparis["adet"]), min_value=1)
-                aciliyetler = ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"]
-                mevcut_aci = siparis.get("aciliyet", "✅ Düşük")
+                yeni_miktar = st.number_input("Miktar", value=float(siparis["miktar"]), min_value=0.01)
+                birimler = ["kg", "litre", "adet", "paket", "koli"]
                 try:
-                    aci_index = aciliyetler.index(mevcut_aci)
+                    bir_index = birimler.index(siparis.get("birim", "adet"))
+                except ValueError:
+                    bir_index = 2  # adet
+                yeni_birim = st.selectbox("Birim", birimler, index=bir_index)
+                aciliyetler = ["🔥 Yüksek", "⚡ Orta", "✅ Düşük"]
+                try:
+                    aci_index = aciliyetler.index(siparis.get("aciliyet", "✅ Düşük"))
                 except ValueError:
                     aci_index = 2
                 yeni_aciliyet = st.selectbox("Aciliyet", aciliyetler, index=aci_index)
@@ -404,7 +412,8 @@ def siparis_sayfasi():
                         else:
                             st.session_state.fire[idx] = {
                                 "urun_adi": yeni_ad.strip(),
-                                "adet": yeni_adet,
+                                "miktar": yeni_miktar,
+                                "birim": yeni_birim,
                                 "aciliyet": yeni_aciliyet,
                                 "eklenme_tarihi": siparis.get("eklenme_tarihi", "")
                             }
@@ -415,8 +424,7 @@ def siparis_sayfasi():
                 with col2:
                     with st.expander("🗑️ Sil", expanded=False):
                         st.warning("Bu işlem geri alınamaz!")
-                        onay = st.checkbox("Eminim, silmek istiyorum.", key=f"sil_siparis_{idx}")
-                        if onay:
+                        if st.checkbox("Eminim, silmek istiyorum.", key=f"sil_siparis_{idx}"):
                             if st.form_submit_button("⚠️ Silmeyi Onayla"):
                                 silinen = st.session_state.fire.pop(idx)
                                 veriyi_kaydet()
@@ -426,7 +434,7 @@ def siparis_sayfasi():
         else:
             st.info("Düzenlenecek sipariş yok.")
 
-# ---------------------------- YEDEKLEME SAYFASI -----------------------
+# ---------------------------- YEDEKLEME SAYFASI ---------------------
 def yedekleme_sayfasi():
     st.header("💾 Yedekleme")
     col1, col2 = st.columns(2)
@@ -463,12 +471,12 @@ def yedekleme_sayfasi():
             except Exception as e:
                 st.error(f"Hata: {e}")
 
-# ---------------------------- VERİ KAYDET ----------------------------
+# ---------------------------- VERİ KAYDET --------------------------
 def veriyi_kaydet():
     dosya_yaz(STOK_DOSYASI, st.session_state.stok)
     dosya_yaz(FIRE_DOSYASI, st.session_state.fire)
 
-# ---------------------------- ANA UYGULAMA ---------------------------
+# ---------------------------- ANA UYGULAMA -------------------------
 def main():
     st.set_page_config(page_title="Stok Takip Pro", page_icon="📦", layout="wide")
     oturumu_baslat()
