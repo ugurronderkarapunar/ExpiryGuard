@@ -145,7 +145,7 @@ def mock_barkod_db_olustur():
         "8691234567894": {"urun_adi": "Tereyağı", "birim": "kg", "kategori": "Süt Ürünleri", "uretici": "Sütaş"},
     }
 
-# ---------------------------- HAREKET & SATIS KAYDI -----------------
+# ---------------------------- HAREKET KAYDI -------------------------
 def hareket_ekle(kullanici, islem, urun_adi, detay=""):
     hareket = {
         "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -320,11 +320,10 @@ def barkod_sayfasi():
                     st.toast("✅ Eklendi", icon="✅", duration=5000)
                     st.rerun()
 
-# ---------------------------- STOK SAYFASI (DÜZENLE/SİL EKLENDİ) ----
+# ---------------------------- STOK SAYFASI --------------------------
 def stok_sayfasi():
     st.header("📦 Stok Yönetimi")
     tab1, tab2, tab3 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil"])
-    
     with tab1:
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
@@ -333,7 +332,6 @@ def stok_sayfasi():
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
         else:
             st.info("Henüz ürün yok.")
-    
     with tab2:
         st.subheader("Yeni Ürün Ekle")
         with st.form("manuel_ekle"):
@@ -368,7 +366,6 @@ def stok_sayfasi():
                     st.toast("✅ Ürün eklendi", icon="✅", duration=5000)
                     st.success(f"🎉 {urun_adi} başarıyla stoğa eklendi!")
                     st.rerun()
-    
     with tab3:
         st.subheader("Ürün Düzenle veya Sil")
         if st.session_state.stok:
@@ -376,7 +373,6 @@ def stok_sayfasi():
             secili = st.selectbox("Ürün Seç", urun_listesi, key="duzenle_sec")
             idx = urun_listesi.index(secili)
             urun = st.session_state.stok[idx]
-            
             with st.form("duzenle_form"):
                 col1, col2, col3 = st.columns(3)
                 yeni_ad = col1.text_input("Ürün Adı", value=urun["urun_adi"])
@@ -401,7 +397,6 @@ def stok_sayfasi():
                     skt = datetime.now()
                 yeni_skt = col2.date_input("SKT", value=skt)
                 yeni_raf = col3.text_input("Raf No", value=urun.get("raf_no", ""))
-                
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.form_submit_button("💾 Güncelle"):
@@ -419,12 +414,10 @@ def stok_sayfasi():
                             veriyi_kaydet()
                             st.toast("✅ Ürün güncellendi", icon="✏️", duration=5000)
                             st.rerun()
-                
                 with col_btn2:
-                    # Silme butonu – onay kutusu ile
-                    sil_onay = st.checkbox("⚠️ Silme onayı", key=f"sil_{idx}")
-                    if sil_onay:
-                        if st.form_submit_button("🗑️ Sil"):
+                    with st.popover("🗑️ Sil"):
+                        st.warning("Bu işlem geri alınamaz!")
+                        if st.button("⚠️ Silmeyi Onayla", key=f"pop_sil_{idx}"):
                             silinen = st.session_state.stok.pop(idx)
                             veriyi_kaydet()
                             hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"], "Ürün stoğu silindi")
@@ -486,7 +479,7 @@ def satis_sayfasi():
             st.toast(f"✅ Satış tamamlandı: {toplam_tutar:.2f} ₺", icon="💵", duration=5000)
             st.rerun()
 
-# ---------------------------- SİPARİŞ SAYFASI (SİLME EKLENDİ) -------
+# ---------------------------- SİPARİŞ SAYFASI -----------------------
 def siparis_sayfasi():
     st.header("🔥 Sipariş Panosu")
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
@@ -532,6 +525,55 @@ def fire_analizi():
     else:
         st.info("Fire kaydı yok.")
 
+# ---------------------------- SATIŞ RAPORU ---------------------------
+def satis_raporu():
+    st.header("📊 Satış Raporu")
+    satislar = dosya_oku(SATIS_DOSYASI, [])
+    if not satislar:
+        st.info("Henüz hiç satış yapılmadı.")
+        return
+    df = pd.DataFrame(satislar)
+    df["tarih"] = pd.to_datetime(df["tarih"])
+    df["gun"] = df["tarih"].dt.date
+    df["ay"] = df["tarih"].dt.strftime("%Y-%m")
+    col1, col2 = st.columns(2)
+    with col1:
+        tarih_aralik = st.date_input("Tarih Aralığı",
+                                     value=(df["gun"].min(), df["gun"].max()),
+                                     key="rapor_tarih")
+    with col2:
+        rapor_tipi = st.radio("Kırılım", ["Günlük", "Aylık", "Ürün Bazlı"], horizontal=True)
+    if len(tarih_aralik) == 2:
+        mask = (df["gun"] >= tarih_aralik[0]) & (df["gun"] <= tarih_aralik[1])
+        df_filtre = df[mask]
+    else:
+        df_filtre = df
+    if rapor_tipi == "Günlük":
+        df_rapor = df_filtre.groupby("gun")["toplam_tutar"].sum().reset_index()
+        df_rapor.columns = ["Tarih", "Toplam Satış (₺)"]
+        st.dataframe(df_rapor, use_container_width=True)
+        fig = px.bar(df_rapor, x="Tarih", y="Toplam Satış (₺)", title="Günlük Satışlar")
+        st.plotly_chart(fig, use_container_width=True)
+    elif rapor_tipi == "Aylık":
+        df_rapor = df_filtre.groupby("ay")["toplam_tutar"].sum().reset_index()
+        df_rapor.columns = ["Ay", "Toplam Satış (₺)"]
+        st.dataframe(df_rapor, use_container_width=True)
+        fig = px.line(df_rapor, x="Ay", y="Toplam Satış (₺)", markers=True, title="Aylık Satış Trendi")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        df_rapor = df_filtre.groupby("urun_adi").agg(
+            Adet=("miktar", "sum"),
+            Ciro=("toplam_tutar", "sum")
+        ).reset_index()
+        st.dataframe(df_rapor, use_container_width=True)
+        colA, colB = st.columns(2)
+        with colA:
+            fig1 = px.pie(df_rapor, values="Ciro", names="urun_adi", title="Ürün Bazlı Ciro Dağılımı")
+            st.plotly_chart(fig1, use_container_width=True)
+        with colB:
+            fig2 = px.bar(df_rapor, x="urun_adi", y="Adet", title="Ürün Bazlı Satış Adedi")
+            st.plotly_chart(fig2, use_container_width=True)
+
 # ---------------------------- YEDEKLEME -----------------------------
 def yedekleme_sayfasi():
     st.header("💾 Yedekleme")
@@ -563,7 +605,10 @@ def main():
         return
     with st.sidebar:
         st.title("📌 Menü")
-        sayfa = st.radio("Sayfa Seç", ["🏠 Ana Panel","📱 Barkod","💵 Satış","📦 Stok","🔥 Sipariş","📉 Fire Analizi","💾 Yedekleme"])
+        sayfa = st.radio("Sayfa Seç", [
+            "🏠 Ana Panel","📱 Barkod","💵 Satış","📦 Stok","🔥 Sipariş",
+            "📉 Fire Analizi","📊 Satış Raporu","💾 Yedekleme"
+        ])
         st.button("🚪 Çıkış", on_click=cikis_yap)
     if sayfa == "🏠 Ana Panel": ana_sayfa()
     elif sayfa == "📱 Barkod": barkod_sayfasi()
@@ -571,6 +616,7 @@ def main():
     elif sayfa == "📦 Stok": stok_sayfasi()
     elif sayfa == "🔥 Sipariş": siparis_sayfasi()
     elif sayfa == "📉 Fire Analizi": fire_analizi()
+    elif sayfa == "📊 Satış Raporu": satis_raporu()
     elif sayfa == "💾 Yedekleme": yedekleme_sayfasi()
 
 if __name__ == "__main__":
