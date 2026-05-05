@@ -34,3 +34,23 @@ pip install -r requirements.txt
 
 # Uygulamayı başlat
 streamlit run app.py
+🔑 Giriş Bilgileri
+Varsayılan demo girişi: admin / 1234
+
+Not: Bu bilgileri canlıda kullanmayın. .streamlit/secrets.toml ile özelleştirin.
+
+🤝 Katkıda Bulunma
+Katkılarınızı bekliyoruz! Lütfen CONTRIBUTING.md dosyasını inceleyin.
+
+Fork'layın
+
+Feature branch oluşturun (git checkout -b yeni-ozellik)
+
+Commit'leyin (git commit -m 'Yeni özellik eklendi')
+
+Push'layın (git push origin yeni-ozellik)
+
+Pull Request açın
+
+📄 Lisans
+MIT License - detaylar için LICENSE dosyasına bakın.
