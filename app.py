@@ -59,11 +59,15 @@ HAREKET_DOSYASI = config["dosya_yollari"].get("hareket", "hareket.json")
 BARKOD_DB_DOSYASI = config["dosya_yollari"].get("barkod_db", "barkod_db.json")
 TEDARIKCI_DOSYASI = config["dosya_yollari"].get("tedarikciler", "tedarikciler.json")
 KULLANICI_DOSYASI = config["dosya_yollari"].get("kullanicilar", "kullanicilar.json")
-KATEGORILER = config["kategoriler"]
-BIRIMLER = config["birimler"]
-ROLLER = config["roller"]
-OTURUM_SURESI = config["oturum_suresi_dk"]
-SKT_UYARI_GUN = config["skt_uyari_gun"]
+KATEGORILER = config.get("kategoriler", ["Kuru Gıda", "Süt Ürünleri", "İçecek", "Temizlik", "Diğer"])
+BIRIMLER = config.get("birimler", ["kg", "litre", "adet", "paket", "gram", "koli", "kutu", "şişe", "çuval"])
+ROLLER = config.get("roller", {
+    "patron": ["tümü"],
+    "kasiyer": ["barkod", "stok_goruntule"],
+    "depocu": ["barkod", "stok_goruntule", "stok_ekle", "skt_takip"]
+})
+OTURUM_SURESI = config.get("oturum_suresi_dk", 30)
+SKT_UYARI_GUN = config.get("skt_uyari_gun", 3)
 
 # ---------------------------- DOSYA İŞLEMLERİ -----------------------
 def dosya_oku(dosya_adi, varsayilan=None):
