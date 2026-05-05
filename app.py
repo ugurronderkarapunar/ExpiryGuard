@@ -1,3 +1,8 @@
+"""
+Market Yönetim Sistemi - Stok, satış, barkod okutma, SKT takibi,
+tedarikçi yönetimi, kâr marjı analizi ve daha fazlası.
+"""
+
 import streamlit as st
 import json
 import os
@@ -8,10 +13,10 @@ import logging
 import hashlib
 import uuid
 from io import BytesIO
-import requests
 import smtplib
 import ssl
 from email.mime.text import MIMEText
+import time
 
 # ---------------------------- LOGLAMA --------------------------------
 logging.basicConfig(filename='app.log', level=logging.INFO,
@@ -42,12 +47,13 @@ VARSAYILAN_CONFIG = {
     }
 }
 
-def load_config():
+def load_config() -> dict:
+    """Konfigürasyon dosyasını yükler, yoksa varsayılanı döner."""
     if os.path.exists(CONFIG_DOSYASI):
         try:
             with open(CONFIG_DOSYASI, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return VARSAYILAN_CONFIG
 
@@ -65,16 +71,18 @@ ROLLER = config.get("roller", {"patron": ["tümü"], "kasiyer": ["barkod"], "dep
 OTURUM_SURESI = config.get("oturum_suresi_dk", 30)
 SKT_UYARI_GUN = config.get("skt_uyari_gun", 3)
 
-# ---------------------------- GÜVENLİK ---------------------------
-def guvenli_html(metin):
+# ---------------------------- GÜVENLİ HTML ---------------------------
+def guvenli_html(metin: str) -> str:
+    """Kullanıcı girdisini HTML enjeksiyonlarına karşı korur."""
     return (str(metin).replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;")
             .replace("'", "&#x27;"))
 
-# ---------------------------- CSS (MOBİL UYUMLU) --------------------------------
-def enerjik_css():
+# ---------------------------- MODERN CSS (MOBİL UYUMLU) --------------
+def enerjik_css() -> None:
+    """Enerjik ve koyu tema CSS stillerini sayfaya enjekte eder."""
     st.markdown("""
     <style>
         .stApp { background-color: #0B1121 !important; }
@@ -132,7 +140,6 @@ def enerjik_css():
             background-color: #141B2D !important; color: #FFFFFF !important;
             border-left: 4px solid #F97316;
         }
-        /* MOBİL UYUMLULUK */
         @media (max-width: 768px) {
             .custom-container { padding: 12px !important; margin: 8px 0 !important; }
             .main-header { font-size: 1.4rem !important; }
@@ -144,25 +151,28 @@ def enerjik_css():
     """, unsafe_allow_html=True)
 
 # ---------------------------- DOSYA İŞLEMLERİ -----------------------
-def dosya_oku(dosya_adi, varsayilan=None):
+def dosya_oku(dosya_adi: str, varsayilan=None):
+    """JSON dosyasını okur, yoksa varsayılanı döner."""
     if os.path.exists(dosya_adi):
         try:
             with open(dosya_adi, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return varsayilan if varsayilan is not None else []
 
-def dosya_yaz(dosya_adi, veri):
+def dosya_yaz(dosya_adi: str, veri) -> bool:
+    """Veriyi JSON dosyasına yazar."""
     try:
         with open(dosya_adi, "w", encoding="utf-8") as f:
             json.dump(veri, f, ensure_ascii=False, indent=2)
         return True
-    except:
+    except Exception:
         return False
 
 # ---------------------------- VERİ GEÇİŞ KONTROL --------------------
-def veri_gecis_kontrol():
+def veri_gecis_kontrol() -> None:
+    """Eski veri formatlarını güncel alanlarla tamamlar."""
     degisti = False
     for u in st.session_state.stok:
         for k, v in [("kategori", "Diğer"), ("min_miktar", 0), ("barkod", ""),
@@ -184,7 +194,8 @@ def veri_gecis_kontrol():
         veriyi_kaydet()
 
 # ---------------------------- MOCK VERİ -----------------------------
-def mock_stok_olustur():
+def mock_stok_olustur() -> list:
+    """Demo amaçlı başlangıç stok verilerini oluşturur."""
     return [
         {"urun_adi": "Un", "miktar": 150, "birim": "kg", "kategori": "Kuru Gıda",
          "min_miktar": 20, "barkod": "8691234567890", "son_kullanma_tarihi": "2026-12-31",
@@ -208,7 +219,8 @@ def mock_stok_olustur():
          "raf_no": "B2", "tahmini_gunluk_satis": 3.0},
     ]
 
-def mock_fire_olustur():
+def mock_fire_olustur() -> list:
+    """Demo fire (sipariş) verilerini oluşturur."""
     return [
         {"urun_adi": "Un", "miktar": 10, "birim": "kg", "aciliyet": "🔥 Yüksek",
          "tedarikci": "ABC Un Fabrikası", "durum": "Bekliyor",
@@ -221,7 +233,8 @@ def mock_fire_olustur():
          "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")},
     ]
 
-def mock_barkod_db_olustur():
+def mock_barkod_db_olustur() -> dict:
+    """Demo barkod veritabanını oluşturur."""
     return {
         "8691234567890": {"urun_adi": "Un", "birim": "kg", "kategori": "Kuru Gıda", "uretici": "ABC Un Fabrikası"},
         "8691234567891": {"urun_adi": "Şeker", "birim": "kg", "kategori": "Kuru Gıda", "uretici": "XYZ Şeker"},
@@ -231,7 +244,8 @@ def mock_barkod_db_olustur():
     }
 
 # ---------------------------- HAREKET KAYDI -------------------------
-def hareket_ekle(kul, islem, ad, detay=""):
+def hareket_ekle(kul: str, islem: str, ad: str, detay: str = "") -> None:
+    """Hareket kaydını JSON dosyasına ekler."""
     h = {"tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kullanici": kul, "islem": islem,
          "urun_adi": ad, "detay": detay}
     liste = dosya_oku(HAREKET_DOSYASI, [])
@@ -240,7 +254,8 @@ def hareket_ekle(kul, islem, ad, detay=""):
         liste = liste[-1000:]
     dosya_yaz(HAREKET_DOSYASI, liste)
 
-def satis_kaydet(ad, birim, miktar, fiyat, tutar, kul):
+def satis_kaydet(ad: str, birim: str, miktar: float, fiyat: float, tutar: float, kul: str) -> None:
+    """Satış kaydını JSON dosyasına ekler."""
     s = {"id": str(uuid.uuid4())[:8], "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
          "kullanici": kul, "urun_adi": ad, "birim": birim, "miktar": miktar,
          "birim_fiyat": fiyat, "toplam_tutar": tutar}
@@ -248,25 +263,24 @@ def satis_kaydet(ad, birim, miktar, fiyat, tutar, kul):
     liste.append(s)
     dosya_yaz(SATIS_DOSYASI, liste)
 
-def bugunku_satis():
+def bugunku_satis() -> float:
+    """Bugün yapılan toplam satış tutarını döner."""
     liste = dosya_oku(SATIS_DOSYASI, [])
     bugun = datetime.now().strftime("%Y-%m-%d")
     return sum(s["toplam_tutar"] for s in liste if s["tarih"].startswith(bugun))
 
 # ---------------------------- E-POSTA BİLDİRİMLERİ -------------------
-def email_gonder(alici, konu, mesaj):
+def email_gonder(alici: str, konu: str, mesaj: str) -> bool:
     """Gmail SMTP ile e‑posta gönderir."""
     try:
         smtp_sunucu = "smtp.gmail.com"
         port = 587
         gonderen = st.secrets["email"]["adres"]
         sifre = st.secrets["email"]["sifre"]
-        
         msg = MIMEText(mesaj)
         msg["Subject"] = konu
         msg["From"] = gonderen
         msg["To"] = alici
-        
         baglanti = smtplib.SMTP(smtp_sunucu, port)
         baglanti.starttls(context=ssl.create_default_context())
         baglanti.login(gonderen, sifre)
@@ -277,11 +291,10 @@ def email_gonder(alici, konu, mesaj):
         logging.error(f"E‑posta gönderme hatası: {e}")
         return False
 
-def skt_ve_kritik_stok_bildirimi():
+def skt_ve_kritik_stok_bildirimi() -> None:
     """Yaklaşan SKT ve kritik stoklar için e‑posta bildirimi (günde 1 kez)."""
     if "bildirim_gonderildi" not in st.session_state:
         st.session_state.bildirim_gonderildi = False
-    
     if not st.session_state.bildirim_gonderildi:
         kritik_urunler = [u for u in st.session_state.stok 
                          if u.get("min_miktar",0) > 0 and u["miktar"] <= u["min_miktar"]]
@@ -294,8 +307,8 @@ def skt_ve_kritik_stok_bildirimi():
                     k = (datetime.strptime(s, "%Y-%m-%d").date() - bugun).days
                     if 0 <= k <= SKT_UYARI_GUN:
                         skt_yaklasanlar.append(f"{u['urun_adi']} - {k} gün kaldı")
-                except: pass
-        
+                except Exception:
+                    pass
         mesaj = "🚨 Market Stok Uyarısı:\n"
         if kritik_urunler:
             mesaj += "\n⚠️ Kritik Stok:\n"
@@ -305,7 +318,6 @@ def skt_ve_kritik_stok_bildirimi():
             mesaj += "\n📅 SKT Yaklaşanlar:\n"
             for s in skt_yaklasanlar:
                 mesaj += f"- {s}\n"
-        
         alici = st.session_state.get("patron_email", "")
         if (kritik_urunler or skt_yaklasanlar) and alici:
             if email_gonder(alici, "Market Stok Uyarısı", mesaj):
@@ -313,7 +325,8 @@ def skt_ve_kritik_stok_bildirimi():
                 logging.info("Bildirim e‑postası gönderildi.")
 
 # ---------------------------- VERİ BİLİMİ FONKSİYONLARI ------------
-def urun_gunluk_satis_hizi(urun_adi, varsayilan=1.0):
+def urun_gunluk_satis_hizi(urun_adi: str, varsayilan: float = 1.0) -> float:
+    """Son 30 günlük satış verisine göre günlük ortalama satış hızını hesaplar."""
     satislar = dosya_oku(SATIS_DOSYASI, [])
     if not satislar:
         for u in st.session_state.stok:
@@ -328,7 +341,7 @@ def urun_gunluk_satis_hizi(urun_adi, varsayilan=1.0):
             tarih = datetime.strptime(s["tarih"], "%Y-%m-%d %H:%M:%S").date()
             if s["urun_adi"] == urun_adi and baslangic <= tarih <= bugun:
                 miktarlar.append(s["miktar"])
-        except:
+        except Exception:
             continue
     if not miktarlar:
         for u in st.session_state.stok:
@@ -337,7 +350,8 @@ def urun_gunluk_satis_hizi(urun_adi, varsayilan=1.0):
         return varsayilan
     return sum(miktarlar) / len(miktarlar)
 
-def bilimsel_indirim_hesapla(urun, kalan_gun):
+def bilimsel_indirim_hesapla(urun: dict, kalan_gun: int) -> float:
+    """Stok fazlası ve kar marjına göre dinamik indirim oranı önerir."""
     if kalan_gun <= 0:
         satis_fiyat = urun.get("satis_fiyat", 10)
         alis_fiyat = urun.get("alis_fiyat", 5)
@@ -365,7 +379,8 @@ def bilimsel_indirim_hesapla(urun, kalan_gun):
     return round(indirim, 1)
 
 # ---------------------------- OTURUM YÖNETİMİ -----------------------
-def oturumu_baslat():
+def oturumu_baslat() -> None:
+    """Session state değişkenlerini ilk yüklemede başlatır."""
     if "stok" not in st.session_state:
         st.session_state.stok = dosya_oku(STOK_DOSYASI, mock_stok_olustur())
     if "fire" not in st.session_state:
@@ -379,6 +394,8 @@ def oturumu_baslat():
             {"kullanici_adi": "admin", "sifre": hashlib.sha256("1234".encode()).hexdigest(), "rol": "patron",
              "ad": "Ahmet"}
         ])
+    if "son_islem_mesaji" not in st.session_state:
+        st.session_state.son_islem_mesaji = ""
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     if "current_user" not in st.session_state:
@@ -387,7 +404,8 @@ def oturumu_baslat():
         st.session_state.last_activity = datetime.now()
     veri_gecis_kontrol()
 
-def oturum_kontrol():
+def oturum_kontrol() -> None:
+    """Oturum süresini kontrol eder, aşımda çıkış yapar."""
     if st.session_state.authenticated:
         if datetime.now() - st.session_state.last_activity > timedelta(minutes=OTURUM_SURESI):
             st.session_state.authenticated = False
@@ -397,7 +415,8 @@ def oturum_kontrol():
             st.session_state.last_activity = datetime.now()
 
 # ---------------------------- GİRİŞ --------------------------
-def giris_ekrani():
+def giris_ekrani() -> None:
+    """Kullanıcı giriş arayüzünü sunar."""
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown(
@@ -411,10 +430,9 @@ def giris_ekrani():
                 try:
                     admin_user = st.secrets["admin"]["kullanici_adi"]
                     admin_pass = st.secrets["admin"]["sifre"]
-                except:
+                except Exception:
                     admin_user = config.get("kullanici_adi", "admin")
                     admin_pass = config.get("sifre", "1234")
-
                 if kullanici == admin_user and sifre == admin_pass:
                     st.session_state.authenticated = True
                     st.session_state.current_user = {"kullanici_adi": admin_user, "rol": "patron", "ad": "Admin"}
@@ -423,14 +441,16 @@ def giris_ekrani():
                 else:
                     st.error("❌ Hatalı giriş!")
 
-def cikis():
+def cikis() -> None:
+    """Oturumu kapatır."""
     st.session_state.authenticated = False
     st.rerun()
 
 # ---------------------------- SAYFALAR --------------------------
-def ana_sayfa():
+def ana_sayfa() -> None:
+    """Yönetim paneli: kritik stoklar, SKT uyarıları, KPI kartları."""
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
-    skt_ve_kritik_stok_bildirimi()  # Otomatik bildirim kontrolü
+    skt_ve_kritik_stok_bildirimi()
     kritik = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u["min_miktar"]]
     skt = []
     bugun = datetime.now().date()
@@ -441,7 +461,7 @@ def ana_sayfa():
                 k = (datetime.strptime(s, "%Y-%m-%d").date() - bugun).days
                 if 0 <= k <= SKT_UYARI_GUN:
                     skt.append({**u, "kalan": k})
-            except:
+            except Exception:
                 pass
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📦 Ürün", len(st.session_state.stok))
@@ -455,13 +475,16 @@ def ana_sayfa():
         st.subheader("🚨 Kritik Stoklar")
         for u in kritik[:5]:
             st.error(f"{guvenli_html(u['urun_adi'])}: {u['miktar']:.2f} {u['birim']}")
+        # Anlık bildirim (balonlar)
+        st.balloons()
     if skt:
         st.subheader("⏰ Yaklaşan SKT (Bilimsel İndirim)")
         for u in skt[:5]:
             oneri = bilimsel_indirim_hesapla(u, u['kalan'])
             st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → Önerilen İndirim: %{oneri}")
 
-def barkod_sayfasi():
+def barkod_sayfasi() -> None:
+    """Barkod okutma (manuel, mobil kamera) ve stok giriş/çıkış."""
     st.markdown('<div class="main-header">📱 Barkod Okutma</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
@@ -503,12 +526,10 @@ def barkod_sayfasi():
                                         "kategori") in KATEGORILER else 0)
             tahmini_gunluk = c1.number_input("Tahmini Günlük Satış", 0.1, format="%.1f",
                                              value=bilgi.get("tahmini_gunluk_satis", 1.0))
-
             skt_var = c2.checkbox("Son kullanma tarihi var mı?", value=True)
             skt = ""
             if skt_var:
                 skt = c1.date_input("SKT")
-
             islem = c2.radio("İşlem", ["📥 Giriş", "📤 Çıkış"], horizontal=True)
             if st.form_submit_button("💾 Kaydet"):
                 if not ad.strip():
@@ -531,7 +552,7 @@ def barkod_sayfasi():
                                 u["son_kullanma_tarihi"] = skt_str
                             u["tahmini_gunluk_satis"] = tahmini_gunluk
                             veriyi_kaydet()
-                            st.toast("✅ Güncellendi", icon="✅", duration=5000)
+                            st.session_state.son_islem_mesaji = f"✅ {ad.strip()} güncellendi"
                             st.rerun()
                     st.session_state.stok.append(
                         {"urun_adi": ad.strip(), "miktar": max(0, gercek), "birim": birim,
@@ -539,19 +560,21 @@ def barkod_sayfasi():
                          "barkod": aktif, "min_miktar": 0, "alis_fiyat": 0, "satis_fiyat": 0,
                          "tahmini_gunluk_satis": tahmini_gunluk})
                     veriyi_kaydet()
-                    st.toast("✅ Eklendi", icon="✅", duration=5000)
+                    st.session_state.son_islem_mesaji = f"✅ {ad.strip()} eklendi"
                     st.rerun()
 
-def stok_sayfasi():
+def stok_sayfasi() -> None:
+    """Stok listeleme, manuel ekleme, düzenleme/silme, stok sayımı."""
     st.markdown('<div class="main-header">📦 Stok Yönetimi</div>', unsafe_allow_html=True)
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil", "🔢 Stok Sayım"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil", "🔢 Stok Sayım", "📥 Toplu Güncelle"]
+    )
     with tab1:
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
             def style_row(row):
                 return ['background-color:#ffcccc' if row.get('min_miktar', 0) > 0 and row[
                     'miktar'] <= row['min_miktar'] else '' for _ in row]
-
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
         else:
             st.info("Ürün yok.")
@@ -572,12 +595,10 @@ def stok_sayfasi():
             satis = c3.number_input("Satış Fiyatı", 0.0, format="%.2f")
             min_m = c1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
             tahmini_gunluk = c2.number_input("Tahmini Günlük Satış", 0.1, format="%.1f", value=1.0)
-
             skt_var = c3.checkbox("Son kullanma tarihi var mı?", value=True)
             skt = ""
             if skt_var:
                 skt = c1.date_input("SKT")
-
             raf = c2.text_input("Raf")
             if st.form_submit_button("💾 Kaydet"):
                 if not ad.strip():
@@ -594,8 +615,7 @@ def stok_sayfasi():
                          "son_kullanma_tarihi": skt_str, "alis_fiyat": alis, "satis_fiyat": satis,
                          "raf_no": raf.strip(), "tahmini_gunluk_satis": tahmini_gunluk})
                     veriyi_kaydet()
-                    st.toast("✅ Eklendi", icon="✅", duration=5000)
-                    st.success(f"🎉 {guvenli_html(ad)} stoğa eklendi!")
+                    st.session_state.son_islem_mesaji = f"🎉 {ad.strip()} stoğa eklendi!"
                     st.rerun()
     with tab3:
         if st.session_state.stok:
@@ -618,7 +638,6 @@ def stok_sayfasi():
                 yeni_min = c1.number_input("Min Stok", value=float(urun.get("min_miktar", 0)), format="%.2f")
                 yeni_tahmini = c2.number_input("Tahmini Günlük Satış", 0.1, format="%.1f",
                                                value=float(urun.get("tahmini_gunluk_satis", 1.0)))
-
                 mevcut_skt = urun.get("son_kullanma_tarihi", "")
                 skt_var = c3.checkbox("Son kullanma tarihi var", value=bool(mevcut_skt))
                 yeni_skt = ""
@@ -628,10 +647,9 @@ def stok_sayfasi():
                             skt_date = datetime.strptime(mevcut_skt, "%Y-%m-%d")
                         else:
                             skt_date = datetime.now()
-                    except:
+                    except Exception:
                         skt_date = datetime.now()
                     yeni_skt = c1.date_input("SKT", value=skt_date)
-
                 yeni_raf = c2.text_input("Raf", value=urun.get("raf_no", ""))
                 if st.form_submit_button("💾 Güncelle"):
                     if not yeni_ad.strip():
@@ -647,7 +665,7 @@ def stok_sayfasi():
                             "kdv_oran": urun.get("kdv_oran", 8), "tahmini_gunluk_satis": yeni_tahmini
                         }
                         veriyi_kaydet()
-                        st.toast("✅ Güncellendi", icon="✏️", duration=5000)
+                        st.session_state.son_islem_mesaji = f"✅ {yeni_ad.strip()} güncellendi"
                         st.rerun()
             with st.popover("🗑️ Sil"):
                 st.warning("Geri alınamaz!")
@@ -656,7 +674,7 @@ def stok_sayfasi():
                     veriyi_kaydet()
                     hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"],
                                  "Ürün stoğu silindi")
-                    st.toast(f"🗑️ {guvenli_html(silinen['urun_adi'])} silindi", icon="🗑️", duration=5000)
+                    st.session_state.son_islem_mesaji = f"🗑️ {silinen['urun_adi']} silindi"
                     st.rerun()
         else:
             st.info("Ürün yok.")
@@ -676,12 +694,35 @@ def stok_sayfasi():
                             veriyi_kaydet()
                             hareket_ekle(st.session_state.current_user["kullanici_adi"], "Sayım Düzeltme", u['urun_adi'],
                                          f"Fark: {fark:+.2f} {u['birim']}")
-                            st.toast(f"✅ Sayım kaydedildi (Fark: {fark:+.2f})", icon="🔢", duration=5000)
+                            st.session_state.son_islem_mesaji = f"✅ Sayım kaydedildi (Fark: {fark:+.2f})"
                             st.rerun()
         else:
             st.info("Ürün yok.")
+    with tab5:
+        st.subheader("📥 Toplu Stok Güncelleme (CSV)")
+        st.markdown("**Format:** `barkod,miktar` (başlık satırı olmadan)")
+        csv_dosya = st.file_uploader("CSV yükle", type=["csv"], key="toplu_csv")
+        if csv_dosya:
+            try:
+                df_csv = pd.read_csv(csv_dosya, header=None, names=["barkod", "miktar"])
+                for _, row in df_csv.iterrows():
+                    barkod = str(row["barkod"]).strip()
+                    miktar = float(row["miktar"])
+                    for u in st.session_state.stok:
+                        if u.get("barkod") == barkod:
+                            u["miktar"] += miktar
+                            hareket_ekle(st.session_state.current_user["kullanici_adi"],
+                                         "Toplu Güncelleme", u["urun_adi"],
+                                         f"{miktar:+.2f} {u['birim']}")
+                            break
+                veriyi_kaydet()
+                st.session_state.son_islem_mesaji = f"✅ {len(df_csv)} ürün güncellendi"
+                st.rerun()
+            except Exception as e:
+                st.error(f"CSV işlenirken hata: {e}")
 
-def satis_sayfasi():
+def satis_sayfasi() -> None:
+    """POS satış ekranı."""
     st.markdown('<div class="main-header">💰 Satış (POS)</div>', unsafe_allow_html=True)
     satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
     if not satilabilir:
@@ -690,6 +731,34 @@ def satis_sayfasi():
     secenekler = [
         f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u
         in satilabilir]
+    # QR hızlı satış: mobil kamera ile okuma
+    with st.expander("📷 QR ile Hızlı Satış (Mobil Kamera)", expanded=False):
+        qr_img = st.camera_input("QR / Barkod okut", key="qr_satis")
+        if qr_img:
+            try:
+                import cv2, numpy as np
+                img = cv2.imdecode(np.asarray(bytearray(qr_img.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+                detector = cv2.QRCodeDetector()
+                data, _, _ = detector.detectAndDecode(img)
+                if data:
+                    # barkoda göre ürünü bul ve otomatik satış yap
+                    for u in satilabilir:
+                        if u.get("barkod") == data:
+                            st.success(f"✅ {u['urun_adi']} bulundu, sepete eklendi.")
+                            # burada direkt satış yapmayıp sepete eklenebilir, şimdilik direkt 1 adet satış
+                            u["miktar"] -= 1
+                            satis_kaydet(u["urun_adi"], u["birim"], 1, u.get("satis_fiyat", 0),
+                                         u.get("satis_fiyat", 0),
+                                         st.session_state.current_user["kullanici_adi"])
+                            veriyi_kaydet()
+                            st.session_state.son_islem_mesaji = f"✅ QR satış: {u['urun_adi']}"
+                            st.rerun()
+                    st.error("Barkod eşleşmedi.")
+                else:
+                    st.warning("QR kod çözülemedi.")
+            except Exception as e:
+                st.error(f"Kamera hatası: {e}")
+
     secili_str = st.selectbox("Ürün Seçin", secenekler)
     idx = secenekler.index(secili_str)
     urun = satilabilir[idx]
@@ -730,10 +799,11 @@ def satis_sayfasi():
             hareket_ekle(st.session_state.current_user["kullanici_adi"], "Satış", urun["urun_adi"],
                          f"{miktar} {urun['birim']} satıldı, tutar: {toplam:.2f} ₺")
             veriyi_kaydet()
-            st.toast(f"✅ Satış: {toplam:.2f} ₺", icon="💵", duration=5000)
+            st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} ₺"
             st.rerun()
 
-def tedarikci_sayfasi():
+def tedarikci_sayfasi() -> None:
+    """Tedarikçi yönetimi: listeleme ve ekleme."""
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
     with tab1:
@@ -752,16 +822,16 @@ def tedarikci_sayfasi():
                     "ad": ad, "guven_puani": guven, "tel": tel
                 })
                 dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
-                st.toast("Tedarikçi eklendi", icon="🏭", duration=5000)
+                st.session_state.son_islem_mesaji = "🏭 Tedarikçi eklendi"
                 st.rerun()
 
-def stok_analizi():
+def stok_analizi() -> None:
+    """Kâr marjı raporu ve stok devir hızı analizi."""
     st.markdown('<div class="main-header">📈 Stok Analizi</div>', unsafe_allow_html=True)
     if not st.session_state.stok:
         st.info("Henüz ürün yok.")
         return
     df = pd.DataFrame(st.session_state.stok)
-    # Kâr marjı raporu
     st.subheader("💵 Kâr Marjı Raporu")
     df["kar_marji"] = df.apply(
         lambda r: ((r['satis_fiyat'] - r['alis_fiyat']) / r['satis_fiyat'] * 100) 
@@ -770,13 +840,13 @@ def stok_analizi():
     st.dataframe(df[["urun_adi", "satis_fiyat", "alis_fiyat", "kar_marji"]].style.format(
         {"kar_marji": "{:.1f}%"}
     ), use_container_width=True)
-    # Stok devir hızı
     st.subheader("🔄 Stok Devir Hızı")
     for u in st.session_state.stok:
         hiz = urun_gunluk_satis_hizi(u["urun_adi"], varsayilan=u.get("tahmini_gunluk_satis", 1.0))
         st.write(f"{u['urun_adi']}: {hiz:.2f} {u['birim']}/gün")
 
-def siparis_sayfasi():
+def siparis_sayfasi() -> None:
+    """Sipariş (fire) panosu."""
     st.markdown('<div class="main-header">🔥 Sipariş Panosu</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
     with tab1:
@@ -792,7 +862,7 @@ def siparis_sayfasi():
                     if st.button("🗑️ Sil", key=f"sil_fire_{i}"):
                         st.session_state.fire.pop(i)
                         veriyi_kaydet()
-                        st.toast("Sipariş silindi", icon="🗑️", duration=5000)
+                        st.session_state.son_islem_mesaji = "Sipariş silindi"
                         st.rerun()
         else:
             st.info("Sipariş yok.")
@@ -805,10 +875,11 @@ def siparis_sayfasi():
                     {"urun_adi": ad, "miktar": miktar, "birim": "adet", "aciliyet": "⚡ Orta",
                      "durum": "Bekliyor", "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")})
                 veriyi_kaydet()
-                st.toast("Sipariş eklendi", icon="🔥", duration=5000)
+                st.session_state.son_islem_mesaji = "🔥 Sipariş eklendi"
                 st.rerun()
 
-def fire_analizi():
+def fire_analizi() -> None:
+    """Kategori bazlı fire analizi grafiği."""
     st.markdown('<div class="main-header">📉 Fire Analizi</div>', unsafe_allow_html=True)
     if st.session_state.fire:
         kat_fire = {}
@@ -822,7 +893,8 @@ def fire_analizi():
     else:
         st.info("Fire kaydı yok.")
 
-def satis_raporu():
+def satis_raporu() -> None:
+    """Satış raporu: günlük, aylık, ürün bazlı, kâr marjı."""
     st.markdown('<div class="main-header">📊 Satış Raporu</div>', unsafe_allow_html=True)
     satislar = dosya_oku(SATIS_DOSYASI, [])
     if not satislar:
@@ -874,7 +946,69 @@ def satis_raporu():
             {"kar_marji": "{:.1f}%"}
         ), use_container_width=True)
 
-def yedekleme_sayfasi():
+def aktivite_logu() -> None:
+    """Kullanıcı hareketlerini tarih filtreli olarak listeler."""
+    st.markdown('<div class="main-header">📋 Aktivite Logu</div>', unsafe_allow_html=True)
+    hareketler = dosya_oku(HAREKET_DOSYASI, [])
+    if not hareketler:
+        st.info("Henüz hareket kaydı yok.")
+        return
+    df = pd.DataFrame(hareketler)
+    df["tarih"] = pd.to_datetime(df["tarih"])
+    c1, c2 = st.columns(2)
+    with c1:
+        baslangic = st.date_input("Başlangıç", df["tarih"].min().date())
+    with c2:
+        bitis = st.date_input("Bitiş", df["tarih"].max().date())
+    mask = (df["tarih"].dt.date >= baslangic) & (df["tarih"].dt.date <= bitis)
+    st.dataframe(df[mask].sort_values("tarih", ascending=False), use_container_width=True)
+
+def kullanici_yonetimi() -> None:
+    """Patronun yeni kullanıcı ekleyebileceği arayüz."""
+    st.markdown('<div class="main-header">👥 Kullanıcı Yönetimi</div>', unsafe_allow_html=True)
+    with st.form("kullanici_ekle"):
+        yeni_kul = st.text_input("Kullanıcı Adı")
+        yeni_sifre = st.text_input("Şifre", type="password")
+        rol = st.selectbox("Rol", list(ROLLER.keys()))
+        ad = st.text_input("Ad Soyad")
+        if st.form_submit_button("Ekle"):
+            if not yeni_kul or not yeni_sifre:
+                st.error("Kullanıcı adı ve şifre zorunlu")
+            else:
+                sifre_hash = hashlib.sha256(yeni_sifre.encode()).hexdigest()
+                st.session_state.kullanicilar.append(
+                    {"kullanici_adi": yeni_kul, "sifre": sifre_hash, "rol": rol, "ad": ad}
+                )
+                dosya_yaz(KULLANICI_DOSYASI, st.session_state.kullanicilar)
+                st.session_state.son_islem_mesaji = f"✅ {yeni_kul} eklendi"
+                st.rerun()
+
+def ayarlar_sayfasi() -> None:
+    """Uygulama ayarları: patron e‑postası, e‑posta testi."""
+    st.markdown('<div class="main-header">⚙️ Ayarlar</div>', unsafe_allow_html=True)
+    with st.form("ayarlar_form"):
+        eposta = st.text_input("Patron E‑posta (bildirimler için)", 
+                               value=st.session_state.get("patron_email", ""))
+        col1, col2 = st.columns(2)
+        with col1:
+            kaydet = st.form_submit_button("💾 Kaydet")
+        with col2:
+            test_btn = st.form_submit_button("📧 Test E‑postası Gönder")
+        if kaydet:
+            st.session_state.patron_email = eposta
+            st.session_state.son_islem_mesaji = "✅ Ayarlar güncellendi"
+            st.rerun()
+        if test_btn:
+            if not eposta:
+                st.error("Önce e‑posta adresi girin")
+            elif email_gonder(eposta, "Test Mesajı", "Market Yönetim Sistemi test e‑postasıdır."):
+                st.session_state.son_islem_mesaji = "✅ Test e‑postası gönderildi"
+                st.rerun()
+            else:
+                st.error("E‑posta gönderilemedi. SMTP ayarlarını kontrol edin.")
+
+def yedekleme_sayfasi() -> None:
+    """Yedek alma ve yükleme."""
     st.markdown('<div class="main-header">💾 Yedekleme</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
@@ -891,26 +1025,35 @@ def yedekleme_sayfasi():
             st.session_state.barkod_db = icerik.get("barkod_db", {})
             st.session_state.tedarikciler = icerik.get("tedarikciler", [])
             veriyi_kaydet()
-            st.toast("✅ Yüklendi", duration=5000)
+            st.session_state.son_islem_mesaji = "✅ Yedek yüklendi"
             st.rerun()
 
-def ayarlar_sayfasi():
-    st.markdown('<div class="main-header">⚙️ Ayarlar</div>', unsafe_allow_html=True)
-    with st.form("ayarlar_form"):
-        eposta = st.text_input("Patron E‑posta (bildirimler için)", 
-                               value=st.session_state.get("patron_email", ""))
-        if st.form_submit_button("💾 Kaydet"):
-            st.session_state.patron_email = eposta
-            st.toast("✅ Ayarlar güncellendi", icon="⚙️", duration=5000)
-            st.rerun()
-
-def veriyi_kaydet():
+def veriyi_kaydet() -> None:
+    """Tüm temel verileri JSON dosyalarına yazar."""
     dosya_yaz(STOK_DOSYASI, st.session_state.stok)
     dosya_yaz(FIRE_DOSYASI, st.session_state.fire)
     dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
 
+# ---------------------------- SAYFA YÖNLENDİRME --------------------
+SAYFALAR = {
+    "🏠 Ana Panel": ana_sayfa,
+    "📱 Barkod": barkod_sayfasi,
+    "💵 Satış": satis_sayfasi,
+    "📦 Stok": stok_sayfasi,
+    "🔥 Sipariş": siparis_sayfasi,
+    "🏭 Tedarikçi": tedarikci_sayfasi,
+    "📈 Stok Analizi": stok_analizi,
+    "📉 Fire Analizi": fire_analizi,
+    "📊 Satış Raporu": satis_raporu,
+    "📋 Aktivite Logu": aktivite_logu,
+    "👥 Kullanıcı Yönetimi": kullanici_yonetimi,
+    "⚙️ Ayarlar": ayarlar_sayfasi,
+    "💾 Yedekleme": yedekleme_sayfasi,
+}
+
 # ---------------------------- ANA UYGULAMA --------------------------
-def main():
+def main() -> None:
+    """Uygulamanın ana giriş noktası."""
     st.set_page_config(page_title="Market Yönetim", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
     enerjik_css()
     pd.set_option('display.float_format', '{:.2f}'.format)
@@ -919,41 +1062,24 @@ def main():
     if not st.session_state.authenticated:
         giris_ekrani()
         return
+
+    # Başarı mesajı gösterimi
+    if st.session_state.son_islem_mesaji:
+        st.success(st.session_state.son_islem_mesaji)
+        st.session_state.son_islem_mesaji = ""
+
     with st.sidebar:
         st.markdown('<h2 style="color:white;">🏪 Market</h2>', unsafe_allow_html=True)
-        st.markdown('<p style="color:#F97316;">v2.0 Tüm Özellikler</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color:#F97316;">v2.0 Tam Paket</p>', unsafe_allow_html=True)
         if st.session_state.current_user:
             st.markdown(
                 f'<div style="background:rgba(249,115,22,0.2);border-radius:12px;padding:12px;"><p style="color:white;">👤 {st.session_state.current_user.get("ad", "Kullanıcı")}</p></div>',
                 unsafe_allow_html=True)
-        sayfa = st.radio("Menü",
-                         ["🏠 Ana Panel", "📱 Barkod", "💵 Satış", "📦 Stok", "🔥 Sipariş", 
-                          "🏭 Tedarikçi", "📈 Stok Analizi", "📉 Fire Analizi",
-                          "📊 Satış Raporu", "💾 Yedekleme", "⚙️ Ayarlar"],
-                         label_visibility="collapsed")
-        if st.button("🚪 Çıkış", use_container_width=True): cikis()
-    if sayfa == "🏠 Ana Panel":
-        ana_sayfa()
-    elif sayfa == "📱 Barkod":
-        barkod_sayfasi()
-    elif sayfa == "💵 Satış":
-        satis_sayfasi()
-    elif sayfa == "📦 Stok":
-        stok_sayfasi()
-    elif sayfa == "🔥 Sipariş":
-        siparis_sayfasi()
-    elif sayfa == "🏭 Tedarikçi":
-        tedarikci_sayfasi()
-    elif sayfa == "📈 Stok Analizi":
-        stok_analizi()
-    elif sayfa == "📉 Fire Analizi":
-        fire_analizi()
-    elif sayfa == "📊 Satış Raporu":
-        satis_raporu()
-    elif sayfa == "💾 Yedekleme":
-        yedekleme_sayfasi()
-    elif sayfa == "⚙️ Ayarlar":
-        ayarlar_sayfasi()
+        sayfa = st.radio("Menü", list(SAYFALAR.keys()), label_visibility="collapsed")
+        if st.button("🚪 Çıkış", use_container_width=True):
+            cikis()
+    # Seçili sayfayı çağır
+    SAYFALAR[sayfa]()
 
 if __name__ == "__main__":
     main()
