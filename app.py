@@ -1,9 +1,3 @@
-"""
-Market Yönetim Sistemi - Stok, satış, barkod okutma, SKT takibi,
-tedarikçi yönetimi, kâr marjı analizi, tema desteği, sesli uyarı,
-hızlı satış, anlık uyarı bandı, günlük kasa kapanışı, şifre sıfırlama.
-"""
-
 import streamlit as st
 import json
 import os
@@ -81,13 +75,11 @@ def guvenli_html(metin: str) -> str:
             .replace("'", "&#x27;"))
 
 # ---------------------------- TEMA YÖNETİMİ ---------------------------
-def tema_degistir(tema: str) -> None:
-    """Kullanıcının seçtiği temayı uygular."""
-    st.session_state.tema = tema
+def tema_degistir() -> None:
+    st.session_state.tema = st.session_state.get("tema_secimi", "Koyu")
 
 # ---------------------------- MODERN CSS (TEMALI, MOBİL UYUMLU) -------
-def enerjik_css() -> None:
-    tema = st.session_state.get("tema", "Koyu")
+def enerjik_css(tema: str) -> None:
     if tema == "Koyu":
         bg = "#0B1121"
         card = "#141B2D"
@@ -473,14 +465,12 @@ def ana_sayfa() -> None:
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
     skt_ve_kritik_stok_bildirimi()
     kritik = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u["min_miktar"]]
-    # Anlık uyarı bandı
     if kritik:
         st.markdown("""
         <div class="sticky-alert">
             ⚠️ KRİTİK STOK UYARISI: Bazı ürünler minimum seviyenin altında! Depoyu kontrol edin.
         </div>
         """, unsafe_allow_html=True)
-        # Sesli uyarı (günde bir kez)
         if "sesli_uyari_verildi" not in st.session_state:
             st.session_state.sesli_uyari_verildi = False
         if not st.session_state.sesli_uyari_verildi:
@@ -608,7 +598,7 @@ def stok_sayfasi() -> None:
             def style_row(row):
                 return ['background-color:#ffcccc' if row.get('min_miktar', 0) > 0 and row[
                     'miktar'] <= row['min_miktar'] else '' for _ in row]
-            st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
+            st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), width='stretch')
         else:
             st.info("Ürün yok.")
     with tab2:
@@ -760,7 +750,6 @@ def satis_sayfasi() -> None:
     if not satilabilir:
         st.warning("Satılacak ürün yok")
         return
-    # Hızlı satış kısayolları
     populer = en_cok_satanlar(5)
     if populer:
         st.subheader("⚡ En Çok Satanlar (Hızlı Satış)")
@@ -777,7 +766,6 @@ def satis_sayfasi() -> None:
                         veriyi_kaydet()
                         st.session_state.son_islem_mesaji = f"✅ Hızlı satış: {urun['urun_adi']}"
                         st.rerun()
-    # QR hızlı satış
     with st.expander("📷 QR ile Hızlı Satış (Mobil Kamera)", expanded=False):
         qr_img = st.camera_input("QR / Barkod okut", key="qr_satis")
         if qr_img:
@@ -882,7 +870,7 @@ def stok_analizi() -> None:
     )
     st.dataframe(df[["urun_adi", "satis_fiyat", "alis_fiyat", "kar_marji"]].style.format(
         {"kar_marji": "{:.1f}%"}
-    ), use_container_width=True)
+    ), width='stretch')
     st.subheader("🔄 Stok Devir Hızı")
     for u in st.session_state.stok:
         hiz = urun_gunluk_satis_hizi(u["urun_adi"], varsayilan=u.get("tahmini_gunluk_satis", 1.0))
@@ -930,7 +918,7 @@ def fire_analizi() -> None:
             kat_fire[kat] = kat_fire.get(kat, 0) + f["miktar"]
         fig = px.pie(names=list(kat_fire.keys()), values=list(kat_fire.values()), title="Kategori Bazlı Fire",
                      hole=0.3)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("Fire kaydı yok.")
 
@@ -954,27 +942,27 @@ def satis_raporu() -> None:
     if tip == "Günlük":
         rpr = df.groupby("gun")["toplam_tutar"].sum().reset_index()
         rpr.columns = ["Tarih", "Toplam Satış (₺)"]
-        st.dataframe(rpr, use_container_width=True)
+        st.dataframe(rpr, width='stretch')
         fig = px.bar(rpr, x="Tarih", y="Toplam Satış (₺)", title="Günlük Satışlar",
                      color_discrete_sequence=["#f97316"])
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     elif tip == "Aylık":
         rpr = df.groupby("ay")["toplam_tutar"].sum().reset_index()
         rpr.columns = ["Ay", "Toplam Satış (₺)"]
-        st.dataframe(rpr, use_container_width=True)
+        st.dataframe(rpr, width='stretch')
         fig = px.line(rpr, x="Ay", y="Toplam Satış (₺)", markers=True, title="Aylık Trend",
                       color_discrete_sequence=["#8b5cf6"])
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     elif tip == "Ürün Bazlı":
         rpr = df.groupby("urun_adi").agg(Adet=("miktar", "sum"), Ciro=("toplam_tutar", "sum")).reset_index()
-        st.dataframe(rpr, use_container_width=True)
+        st.dataframe(rpr, width='stretch')
         colA, colB = st.columns(2)
         with colA:
             fig1 = px.pie(rpr, values="Ciro", names="urun_adi", title="Ciro Dağılımı", hole=0.3)
-            st.plotly_chart(fig1, use_container_width=True)
+            st.plotly_chart(fig1, width='stretch')
         with colB:
             fig2 = px.bar(rpr, x="urun_adi", y="Adet", title="Satış Adedi", color_discrete_sequence=["#10b981"])
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
     else:  # Kâr Marjı
         st.subheader("Ürün Bazlı Kâr Marjı")
         df_kar = pd.DataFrame(st.session_state.stok)
@@ -984,7 +972,7 @@ def satis_raporu() -> None:
         )
         st.dataframe(df_kar[["urun_adi", "satis_fiyat", "alis_fiyat", "kar_marji"]].style.format(
             {"kar_marji": "{:.1f}%"}
-        ), use_container_width=True)
+        ), width='stretch')
 
 def aktivite_logu() -> None:
     st.markdown('<div class="main-header">📋 Aktivite Logu</div>', unsafe_allow_html=True)
@@ -1000,7 +988,7 @@ def aktivite_logu() -> None:
     with c2:
         bitis = st.date_input("Bitiş", df["tarih"].max().date())
     mask = (df["tarih"].dt.date >= baslangic) & (df["tarih"].dt.date <= bitis)
-    st.dataframe(df[mask].sort_values("tarih", ascending=False), use_container_width=True)
+    st.dataframe(df[mask].sort_values("tarih", ascending=False), width='stretch')
 
 def kasa_kapanisi() -> None:
     st.markdown('<div class="main-header">🧾 Günlük Kasa Kapanışı</div>', unsafe_allow_html=True)
@@ -1013,14 +1001,16 @@ def kasa_kapanisi() -> None:
     urun_adedi = sum(s["miktar"] for s in satislar)
     df = pd.DataFrame(satislar)
     st.subheader("📋 Satış Detayı")
-    st.dataframe(df[["urun_adi", "miktar", "birim_fiyat", "toplam_tutar"]], use_container_width=True)
+    st.dataframe(df[["urun_adi", "miktar", "birim_fiyat", "toplam_tutar"]], width='stretch')
     st.metric("Toplam Satış", f"{toplam_satis:.2f} ₺")
     st.metric("Satılan Ürün Adedi", urun_adedi)
-    # PDF çıktı
+    # PDF çıktı (Türkçe karakter desteği ile)
     if st.button("📄 PDF Kapanış Raporu İndir"):
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        # Unicode font ekle (DejaVu)
+        pdf.add_font("DejaVu", "", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
+        pdf.set_font("DejaVu", size=12)
         pdf.cell(200, 10, txt=f"Günlük Kasa Kapanışı - {bugun}", ln=True, align='C')
         pdf.ln(10)
         for _, row in df.iterrows():
@@ -1075,7 +1065,6 @@ def sifre_sifirla() -> None:
             else:
                 config["sifre"] = yeni_sifre
                 dosya_yaz(CONFIG_DOSYASI, config)
-                # secrets dosyası varsa güncelle
                 try:
                     secrets_path = os.path.join(".streamlit", "secrets.toml")
                     with open(secrets_path, "r") as f:
@@ -1170,7 +1159,7 @@ SAYFALAR = {
 def main() -> None:
     st.set_page_config(page_title="Market Yönetim", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
     oturumu_baslat()
-    enerjik_css()
+    enerjik_css(st.session_state.get("tema", "Koyu"))
     pd.set_option('display.float_format', '{:.2f}'.format)
     oturum_kontrol()
     if not st.session_state.authenticated:
@@ -1186,8 +1175,9 @@ def main() -> None:
             st.markdown(
                 f'<div style="background:rgba(249,115,22,0.2);border-radius:12px;padding:12px;"><p style="color:white;">👤 {st.session_state.current_user.get("ad", "Kullanıcı")}</p></div>',
                 unsafe_allow_html=True)
-        tema_sec = st.selectbox("Tema", ["Koyu", "Aydınlık"], index=0 if st.session_state.tema == "Koyu" else 1,
-                                on_change=tema_degistir, args=(st.session_state.tema,))
+        st.selectbox("Tema", ["Koyu", "Aydınlık"],
+                     index=0 if st.session_state.get("tema", "Koyu") == "Koyu" else 1,
+                     key="tema_secimi", on_change=tema_degistir)
         sayfa = st.radio("Menü", list(SAYFALAR.keys()), label_visibility="collapsed")
         if st.button("🚪 Çıkış", use_container_width=True):
             cikis()
