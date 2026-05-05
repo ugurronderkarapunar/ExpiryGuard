@@ -6,7 +6,6 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import logging
 from io import BytesIO
-import time
 import hashlib
 
 # ---------------------------- LOGLAMA --------------------------------
@@ -52,22 +51,18 @@ def load_config():
 
 config = load_config()
 
-# ---------------------------- SABİTLER ----------------------------
-STOK_DOSYASI = config["dosya_yollari"].get("stok", "stok.json")
-FIRE_DOSYASI = config["dosya_yollari"].get("fire", "fire.json")
-HAREKET_DOSYASI = config["dosya_yollari"].get("hareket", "hareket.json")
-BARKOD_DB_DOSYASI = config["dosya_yollari"].get("barkod_db", "barkod_db.json")
-TEDARIKCI_DOSYASI = config["dosya_yollari"].get("tedarikciler", "tedarikciler.json")
-KULLANICI_DOSYASI = config["dosya_yollari"].get("kullanicilar", "kullanicilar.json")
-KATEGORILER = config.get("kategoriler", ["Kuru Gıda", "Süt Ürünleri", "İçecek", "Temizlik", "Diğer"])
-BIRIMLER = config.get("birimler", ["kg", "litre", "adet", "paket", "gram", "koli", "kutu", "şişe", "çuval"])
-ROLLER = config.get("roller", {
-    "patron": ["tümü"],
-    "kasiyer": ["barkod", "stok_goruntule"],
-    "depocu": ["barkod", "stok_goruntule", "stok_ekle", "skt_takip"]
-})
-OTURUM_SURESI = config.get("oturum_suresi_dk", 30)
-SKT_UYARI_GUN = config.get("skt_uyari_gun", 3)
+# ---------------------------- SABİTLER (güvenli erişim) ----------------------------
+STOK_DOSYASI        = config["dosya_yollari"].get("stok", "stok.json")
+FIRE_DOSYASI        = config["dosya_yollari"].get("fire", "fire.json")
+HAREKET_DOSYASI     = config["dosya_yollari"].get("hareket", "hareket.json")
+BARKOD_DB_DOSYASI   = config["dosya_yollari"].get("barkod_db", "barkod_db.json")
+TEDARIKCI_DOSYASI   = config["dosya_yollari"].get("tedarikciler", "tedarikciler.json")
+KULLANICI_DOSYASI   = config["dosya_yollari"].get("kullanicilar", "kullanicilar.json")
+KATEGORILER         = config.get("kategoriler", ["Kuru Gıda", "Süt Ürünleri", "İçecek", "Temizlik", "Diğer"])
+BIRIMLER            = config.get("birimler", ["kg", "litre", "adet", "paket", "gram", "koli", "kutu", "şişe", "çuval"])
+ROLLER              = config.get("roller", {"patron": ["tümü"], "kasiyer": ["barkod"], "depocu": ["barkod","stok_ekle"]})
+OTURUM_SURESI       = config.get("oturum_suresi_dk", 30)
+SKT_UYARI_GUN       = config.get("skt_uyari_gun", 3)
 
 # ---------------------------- DOSYA İŞLEMLERİ -----------------------
 def dosya_oku(dosya_adi, varsayilan=None):
@@ -138,6 +133,15 @@ def mock_fire_olustur():
         {"urun_adi": "Yumurta", "miktar": 50, "birim": "adet", "aciliyet": "✅ Düşük", "tedarikci": "Köy Yumurtası", "durum": "Bekliyor", "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")},
     ]
 
+def mock_barkod_db_olustur():
+    return {
+        "8691234567890": {"urun_adi": "Un", "birim": "kg", "kategori": "Kuru Gıda", "uretici": "ABC Un Fabrikası"},
+        "8691234567891": {"urun_adi": "Şeker", "birim": "kg", "kategori": "Kuru Gıda", "uretici": "XYZ Şeker"},
+        "8691234567892": {"urun_adi": "Süt", "birim": "litre", "kategori": "Süt Ürünleri", "uretici": "Sütaş"},
+        "8691234567893": {"urun_adi": "Yumurta", "birim": "adet", "kategori": "Diğer", "uretici": "Köy Yumurtası"},
+        "8691234567894": {"urun_adi": "Tereyağı", "birim": "kg", "kategori": "Süt Ürünleri", "uretici": "Sütaş"},
+    }
+
 # ---------------------------- HAREKET KAYDI -------------------------
 def hareket_ekle(kullanici, islem, urun_adi, detay=""):
     hareket = {
@@ -160,7 +164,7 @@ def oturumu_baslat():
     if "fire" not in st.session_state:
         st.session_state.fire = dosya_oku(FIRE_DOSYASI, mock_fire_olustur())
     if "barkod_db" not in st.session_state:
-        st.session_state.barkod_db = dosya_oku(BARKOD_DB_DOSYASI, {})
+        st.session_state.barkod_db = dosya_oku(BARKOD_DB_DOSYASI, mock_barkod_db_olustur())
     if "tedarikciler" not in st.session_state:
         st.session_state.tedarikciler = dosya_oku(TEDARIKCI_DOSYASI, [])
     if "kullanicilar" not in st.session_state:
@@ -200,7 +204,6 @@ def giris_ekrani():
                     st.session_state.last_activity = datetime.now()
                     st.rerun()
             st.error("❌ Hatalı giriş!")
-
 def cikis_yap():
     st.session_state.authenticated = False
     st.rerun()
@@ -230,55 +233,134 @@ def ana_sayfa():
         st.subheader("⏰ Yaklaşan SKT")
         for u in skt_list[:5]: st.warning(f"{u['urun_adi']}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
 
-# ---------------------------- BARKOD SAYFASI -----------------------
+# ---------------------------- BARKOD SAYFASI (USB/Mobil uyumlu) -----
 def barkod_sayfasi():
-    st.header("📱 Barkod Okutma")
-    barkod = st.text_input("Barkod", placeholder="Okutun veya yazın...")
-    if barkod and len(barkod)>=10:
-        bilgi = st.session_state.barkod_db.get(barkod, {})
-        urun_adi = bilgi.get("urun_adi","")
-        st.info(f"📦 {urun_adi}" if urun_adi else "❓ Yeni ürün")
-        with st.form("barkod_form"):
-            col1,col2=st.columns(2)
-            ad = col1.text_input("Ürün Adı", value=urun_adi)
-            miktar = col1.number_input("Miktar", 0.01, format="%.2f")
-            birim = col2.selectbox("Birim", BIRIMLER)
-            kategori = col2.selectbox("Kategori", KATEGORILER)
-            skt = col1.date_input("SKT")
-            if st.form_submit_button("Kaydet"):
-                for u in st.session_state.stok:
-                    if u.get("barkod")==barkod:
-                        u["miktar"]+=miktar
-                        u["son_kullanma_tarihi"]=skt.strftime("%Y-%m-%d")
-                        veriyi_kaydet()
-                        st.toast("✅ Güncellendi")
-                        st.rerun()
-                st.session_state.stok.append({"urun_adi":ad,"miktar":miktar,"birim":birim,"kategori":kategori,"son_kullanma_tarihi":skt.strftime("%Y-%m-%d"),"barkod":barkod,"min_miktar":0,"alis_fiyat":0,"satis_fiyat":0})
-                veriyi_kaydet()
-                st.toast("✅ Eklendi")
-                st.rerun()
+    st.header("📱 Barkod Okutma (USB veya Mobil Kamera)")
+    st.info("USB barkod okuyucu için inputa tıklayıp okutun. Mobilde kamera simgesine tıklayın.")
 
-# ---------------------------- STOK SAYFASI --------------------------
+    # Mobil için streamlit-barcode-scanner desteği
+    try:
+        from streamlit_barcode_scanner import barcode_scanner
+        mobil_barkod = barcode_scanner("📷 Kamerayla Okut")
+        if mobil_barkod:
+            st.session_state["barkod_input"] = mobil_barkod
+    except ImportError:
+        st.warning("Mobil kamera için `streamlit-barcode-scanner` kurun: pip install streamlit-barcode-scanner")
+
+    barkod = st.text_input("Barkod Numarası", key="barkod_input", placeholder="Okutun veya manuel yazın...")
+    if barkod:
+        bilgi = st.session_state.barkod_db.get(barkod, {})
+        urun_adi = bilgi.get("urun_adi", "")
+        if urun_adi:
+            st.success(f"📦 {urun_adi} ({bilgi.get('birim','')}) - {bilgi.get('uretici','')}")
+        else:
+            st.warning("❓ Yeni barkod. Veritabanına kaydetmek için aşağıdaki formu doldurun.")
+        
+        with st.form("barkod_form"):
+            col1, col2 = st.columns(2)
+            ad = col1.text_input("Ürün Adı *", value=urun_adi)
+            miktar = col1.number_input("Miktar", min_value=0.01, format="%.2f", value=1.0)
+            birim = col2.selectbox("Birim", BIRIMLER, 
+                                   index=BIRIMLER.index(bilgi.get("birim", "adet")) if bilgi.get("birim") in BIRIMLER else 0)
+            kategori = col2.selectbox("Kategori", KATEGORILER,
+                                      index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
+            skt = col1.date_input("Son Kullanma Tarihi", min_value=datetime.now().date())
+            islem_tipi = col2.radio("İşlem", ["📥 Stok Giriş", "📤 Stok Çıkış"], horizontal=True)
+            
+            if st.form_submit_button("✅ İşlemi Kaydet"):
+                if not ad.strip():
+                    st.error("Ürün adı zorunlu!")
+                else:
+                    # Barkod DB güncelle
+                    if barkod not in st.session_state.barkod_db:
+                        st.session_state.barkod_db[barkod] = {"urun_adi": ad.strip(), "birim": birim, "kategori": kategori}
+                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+
+                    gercek_miktar = miktar if islem_tipi == "📥 Stok Giriş" else -miktar
+                    # Stokta ara
+                    for urun in st.session_state.stok:
+                        if urun.get("barkod") == barkod:
+                            urun["miktar"] += gercek_miktar
+                            urun["son_kullanma_tarihi"] = skt.strftime("%Y-%m-%d")
+                            veriyi_kaydet()
+                            st.toast("✅ Güncellendi", icon="✅")
+                            st.rerun()
+                    # Yeni ürün ekle
+                    st.session_state.stok.append({
+                        "urun_adi": ad.strip(),
+                        "miktar": max(0, gercek_miktar),
+                        "birim": birim,
+                        "kategori": kategori,
+                        "son_kullanma_tarihi": skt.strftime("%Y-%m-%d"),
+                        "barkod": barkod,
+                        "min_miktar": 0, "alis_fiyat": 0, "satis_fiyat": 0
+                    })
+                    veriyi_kaydet()
+                    st.toast("✅ Eklendi", icon="✅")
+                    st.rerun()
+
+# ---------------------------- STOK SAYFASI (barkod destekli manuel ekleme) -----
 def stok_sayfasi():
     st.header("📦 Stok Yönetimi")
-    df = pd.DataFrame(st.session_state.stok)
-    if not df.empty:
-        st.dataframe(df.style.apply(lambda r: ['background:#fcc']*len(r) if r['min_miktar']>0 and r['miktar']<=r['min_miktar'] else ['']*len(r), axis=1).format(precision=2), use_container_width=True)
-    with st.form("ekle"):
-        col1,col2=st.columns(2)
-        ad=col1.text_input("Ürün Adı")
-        miktar=col2.number_input("Miktar",0.0,format="%.2f")
-        if st.form_submit_button("Ekle"):
-            st.session_state.stok.append({"urun_adi":ad,"miktar":miktar,"birim":"adet","kategori":"Diğer","min_miktar":0})
-            veriyi_kaydet()
-            st.rerun()
+    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle/Düzenle"])
 
-# ---------------------------- SİPARİŞ SAYFASI -----------------------
+    with tab1:
+        df = pd.DataFrame(st.session_state.stok)
+        if not df.empty:
+            def style_row(row):
+                return ['background-color:#ffcccc' if row.get('min_miktar',0)>0 and row['miktar']<=row['min_miktar'] else '' for _ in row]
+            st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
+        else:
+            st.info("Henüz ürün yok.")
+
+    with tab2:
+        st.subheader("Yeni Ürün Ekle (manuel veya barkodlu)")
+        with st.form("manuel_ekle"):
+            barkod = st.text_input("📱 Barkod (opsiyonel, okutabilirsiniz)")
+            barkod_bilgi = st.session_state.barkod_db.get(barkod, {}) if barkod else {}
+
+            col1, col2, col3 = st.columns(3)
+            urun_adi = col1.text_input("Ürün Adı *", value=barkod_bilgi.get("urun_adi", ""))
+            miktar = col1.number_input("Miktar", min_value=0.0, format="%.2f")
+            birim = col2.selectbox("Birim", BIRIMLER,
+                                   index=BIRIMLER.index(barkod_bilgi.get("birim", "adet")) if barkod_bilgi.get("birim") in BIRIMLER else 0)
+            kategori = col3.selectbox("Kategori", KATEGORILER,
+                                      index=KATEGORILER.index(barkod_bilgi.get("kategori", "Diğer")) if barkod_bilgi.get("kategori") in KATEGORILER else 0)
+            alis_fiyat = col2.number_input("Alış Fiyatı (₺)", 0.0, format="%.2f")
+            satis_fiyat = col3.number_input("Satış Fiyatı (₺)", 0.0, format="%.2f")
+            min_miktar = col1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
+            skt = col2.date_input("SKT", min_value=datetime.now().date())
+            raf_no = col3.text_input("Raf No")
+
+            if st.form_submit_button("💾 Kaydet"):
+                if not urun_adi.strip():
+                    st.error("Ürün adı zorunlu")
+                else:
+                    if barkod and barkod not in st.session_state.barkod_db:
+                        st.session_state.barkod_db[barkod] = {"urun_adi": urun_adi.strip(), "birim": birim, "kategori": kategori}
+                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+                    st.session_state.stok.append({
+                        "urun_adi": urun_adi.strip(),
+                        "miktar": miktar,
+                        "birim": birim,
+                        "kategori": kategori,
+                        "min_miktar": min_miktar,
+                        "barkod": barkod.strip(),
+                        "son_kullanma_tarihi": skt.strftime("%Y-%m-%d"),
+                        "alis_fiyat": alis_fiyat,
+                        "satis_fiyat": satis_fiyat,
+                        "raf_no": raf_no.strip()
+                    })
+                    veriyi_kaydet()
+                    st.toast("✅ Eklendi", icon="✅")
+                    st.rerun()
+
+# ---------------------------- SİPARİŞ -------------------------------
 def siparis_sayfasi():
     st.header("🔥 Sipariş Panosu")
     df = pd.DataFrame(st.session_state.fire)
     if not df.empty:
-        st.dataframe(df[["urun_adi","miktar","birim","aciliyet","durum"]])
+        st.dataframe(df[["urun_adi","miktar","birim","aciliyet","durum"]], use_container_width=True)
     with st.form("fire_ekle"):
         ad = st.text_input("Ürün")
         miktar = st.number_input("Miktar",0.01,format="%.2f")
@@ -297,27 +379,30 @@ def fire_analizi():
             kat_fire[kat]=kat_fire.get(kat,0)+f["miktar"]
         fig=px.pie(names=list(kat_fire.keys()), values=list(kat_fire.values()), title="Kategori Bazlı Fire")
         st.plotly_chart(fig)
+    else:
+        st.info("Fire kaydı yok.")
 
-# ---------------------------- YEDEKLEME ---------------------
+# ---------------------------- YEDEKLEME -----------------------------
 def yedekleme_sayfasi():
     st.header("💾 Yedekleme")
-    yedek = {"stok":st.session_state.stok,"fire":st.session_state.fire}
+    yedek = {"stok":st.session_state.stok,"fire":st.session_state.fire,"barkod_db":st.session_state.barkod_db}
     st.download_button("📥 JSON İndir", json.dumps(yedek,ensure_ascii=False,indent=2), "yedek.json")
     dosya = st.file_uploader("Yedek yükle", type="json")
     if dosya:
         icerik = json.load(dosya)
-        st.session_state.stok = icerik["stok"]
-        st.session_state.fire = icerik["fire"]
+        st.session_state.stok = icerik.get("stok",[])
+        st.session_state.fire = icerik.get("fire",[])
+        st.session_state.barkod_db = icerik.get("barkod_db",{})
         veriyi_kaydet()
         st.toast("✅ Yüklendi")
         st.rerun()
 
-# ---------------------------- VERİ KAYDET -------------------------
+# ---------------------------- VERİ KAYDET ---------------------------
 def veriyi_kaydet():
     dosya_yaz(STOK_DOSYASI, st.session_state.stok)
     dosya_yaz(FIRE_DOSYASI, st.session_state.fire)
 
-# ---------------------------- ANA UYGULAMA -------------------------
+# ---------------------------- ANA UYGULAMA --------------------------
 def main():
     st.set_page_config(page_title="Market Yönetim", page_icon="🏪", layout="wide")
     pd.set_option('display.float_format', '{:.2f}'.format)
