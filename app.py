@@ -233,77 +233,100 @@ def ana_sayfa():
         st.subheader("⏰ Yaklaşan SKT")
         for u in skt_list[:5]: st.warning(f"{u['urun_adi']}: {u['kalan']} gün → {'%30' if u['kalan']<=1 else '%20'} indirim")
 
-# ---------------------------- BARKOD SAYFASI (USB/Mobil uyumlu) -----
+# ---------------------------- BARKOD SAYFASI (Mobil + USB) ----------
 def barkod_sayfasi():
-    st.header("📱 Barkod Okutma (USB veya Mobil Kamera)")
-    st.info("USB barkod okuyucu için inputa tıklayıp okutun. Mobilde kamera simgesine tıklayın.")
-
-    # Mobil için streamlit-barcode-scanner desteği
-    try:
-        from streamlit_barcode_scanner import barcode_scanner
-        mobil_barkod = barcode_scanner("📷 Kamerayla Okut")
-        if mobil_barkod:
-            st.session_state["barkod_input"] = mobil_barkod
-    except ImportError:
-        st.warning("Mobil kamera için `streamlit-barcode-scanner` kurun: pip install streamlit-barcode-scanner")
-
-    barkod = st.text_input("Barkod Numarası", key="barkod_input", placeholder="Okutun veya manuel yazın...")
-    if barkod:
-        bilgi = st.session_state.barkod_db.get(barkod, {})
+    st.header("📱 Barkod Okutma")
+    
+    # ---- USB / Manuel Giriş ----
+    barkod_manuel = st.text_input(
+        "🔢 Barkod Numarası (USB / Manuel)",
+        placeholder="Okutun veya yazın...",
+        key="manuel_barkod"
+    )
+    
+    # ---- Mobil Kamera ----
+    st.subheader("📷 Mobil Kamera")
+    img_file = st.camera_input("Kamerayı açın ve barkodu gösterin")
+    
+    barkod = None
+    if img_file is not None:
+        try:
+            from pyzbar.pyzbar import decode
+            from PIL import Image
+            img = Image.open(img_file)
+            decoded = decode(img)
+            if decoded:
+                barkod = decoded[0].data.decode("utf-8")
+                st.success(f"✅ Okunan Barkod: {barkod}")
+            else:
+                st.warning("Barkod algılanamadı, lütfen net bir şekilde tekrar deneyin.")
+        except Exception as e:
+            st.error(f"Kamera hatası: {e}")
+    
+    # Aktif barkod (önce manuel, sonra kamera)
+    aktif_barkod = barkod_manuel or barkod
+    if aktif_barkod:
+        bilgi = st.session_state.barkod_db.get(aktif_barkod, {})
         urun_adi = bilgi.get("urun_adi", "")
         if urun_adi:
-            st.success(f"📦 {urun_adi} ({bilgi.get('birim','')}) - {bilgi.get('uretici','')}")
+            st.info(f"📦 **{urun_adi}** ({bilgi.get('birim','')}) – {bilgi.get('uretici','')}")
         else:
-            st.warning("❓ Yeni barkod. Veritabanına kaydetmek için aşağıdaki formu doldurun.")
+            st.warning("❓ Yeni barkod. Aşağıdaki formu doldurarak kaydedebilirsiniz.")
         
         with st.form("barkod_form"):
             col1, col2 = st.columns(2)
             ad = col1.text_input("Ürün Adı *", value=urun_adi)
             miktar = col1.number_input("Miktar", min_value=0.01, format="%.2f", value=1.0)
-            birim = col2.selectbox("Birim", BIRIMLER, 
+            birim = col2.selectbox("Birim", BIRIMLER,
                                    index=BIRIMLER.index(bilgi.get("birim", "adet")) if bilgi.get("birim") in BIRIMLER else 0)
             kategori = col2.selectbox("Kategori", KATEGORILER,
                                       index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            skt = col1.date_input("Son Kullanma Tarihi", min_value=datetime.now().date())
-            islem_tipi = col2.radio("İşlem", ["📥 Stok Giriş", "📤 Stok Çıkış"], horizontal=True)
+            skt = col1.date_input("SKT", min_value=datetime.now().date())
+            islem = col2.radio("İşlem", ["📥 Stok Giriş", "📤 Stok Çıkış"], horizontal=True)
             
-            if st.form_submit_button("✅ İşlemi Kaydet"):
+            if st.form_submit_button("💾 Kaydet"):
                 if not ad.strip():
                     st.error("Ürün adı zorunlu!")
                 else:
-                    # Barkod DB güncelle
-                    if barkod not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[barkod] = {"urun_adi": ad.strip(), "birim": birim, "kategori": kategori}
+                    # Barkod DB'ye ekle
+                    if aktif_barkod not in st.session_state.barkod_db:
+                        st.session_state.barkod_db[aktif_barkod] = {
+                            "urun_adi": ad.strip(),
+                            "birim": birim,
+                            "kategori": kategori
+                        }
                         dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
-
-                    gercek_miktar = miktar if islem_tipi == "📥 Stok Giriş" else -miktar
-                    # Stokta ara
+                    
+                    gercek_miktar = miktar if islem == "📥 Stok Giriş" else -miktar
+                    # Stokta güncelle
                     for urun in st.session_state.stok:
-                        if urun.get("barkod") == barkod:
+                        if urun.get("barkod") == aktif_barkod:
                             urun["miktar"] += gercek_miktar
                             urun["son_kullanma_tarihi"] = skt.strftime("%Y-%m-%d")
                             veriyi_kaydet()
                             st.toast("✅ Güncellendi", icon="✅")
                             st.rerun()
-                    # Yeni ürün ekle
+                    # Yeni kayıt
                     st.session_state.stok.append({
                         "urun_adi": ad.strip(),
                         "miktar": max(0, gercek_miktar),
                         "birim": birim,
                         "kategori": kategori,
                         "son_kullanma_tarihi": skt.strftime("%Y-%m-%d"),
-                        "barkod": barkod,
-                        "min_miktar": 0, "alis_fiyat": 0, "satis_fiyat": 0
+                        "barkod": aktif_barkod,
+                        "min_miktar": 0,
+                        "alis_fiyat": 0,
+                        "satis_fiyat": 0
                     })
                     veriyi_kaydet()
                     st.toast("✅ Eklendi", icon="✅")
                     st.rerun()
 
-# ---------------------------- STOK SAYFASI (barkod destekli manuel ekleme) -----
+# ---------------------------- STOK SAYFASI --------------------------
 def stok_sayfasi():
     st.header("📦 Stok Yönetimi")
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle/Düzenle"])
-
+    
     with tab1:
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
@@ -312,13 +335,13 @@ def stok_sayfasi():
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
         else:
             st.info("Henüz ürün yok.")
-
+    
     with tab2:
         st.subheader("Yeni Ürün Ekle (manuel veya barkodlu)")
         with st.form("manuel_ekle"):
             barkod = st.text_input("📱 Barkod (opsiyonel, okutabilirsiniz)")
             barkod_bilgi = st.session_state.barkod_db.get(barkod, {}) if barkod else {}
-
+            
             col1, col2, col3 = st.columns(3)
             urun_adi = col1.text_input("Ürün Adı *", value=barkod_bilgi.get("urun_adi", ""))
             miktar = col1.number_input("Miktar", min_value=0.0, format="%.2f")
@@ -331,7 +354,7 @@ def stok_sayfasi():
             min_miktar = col1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
             skt = col2.date_input("SKT", min_value=datetime.now().date())
             raf_no = col3.text_input("Raf No")
-
+            
             if st.form_submit_button("💾 Kaydet"):
                 if not urun_adi.strip():
                     st.error("Ürün adı zorunlu")
