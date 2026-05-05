@@ -53,12 +53,12 @@ def load_config():
 config = load_config()
 
 # ---------------------------- SABİTLER ----------------------------
-STOK_DOSYASI = config["dosya_yollari"]["stok"]
-FIRE_DOSYASI = config["dosya_yollari"]["fire"]
-HAREKET_DOSYASI = config["dosya_yollari"]["hareket"]
-BARKOD_DB_DOSYASI = config["dosya_yollari"]["barkod_db"]
-TEDARIKCI_DOSYASI = config["dosya_yollari"]["tedarikciler"]
-KULLANICI_DOSYASI = config["dosya_yollari"]["kullanicilar"]
+STOK_DOSYASI = config["dosya_yollari"].get("stok", "stok.json")
+FIRE_DOSYASI = config["dosya_yollari"].get("fire", "fire.json")
+HAREKET_DOSYASI = config["dosya_yollari"].get("hareket", "hareket.json")
+BARKOD_DB_DOSYASI = config["dosya_yollari"].get("barkod_db", "barkod_db.json")
+TEDARIKCI_DOSYASI = config["dosya_yollari"].get("tedarikciler", "tedarikciler.json")
+KULLANICI_DOSYASI = config["dosya_yollari"].get("kullanicilar", "kullanicilar.json")
 KATEGORILER = config["kategoriler"]
 BIRIMLER = config["birimler"]
 ROLLER = config["roller"]
