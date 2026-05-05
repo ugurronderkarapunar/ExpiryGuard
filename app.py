@@ -114,24 +114,19 @@ def mock_stok_olustur():
     return [
         {"urun_adi": "Un", "miktar": 150, "birim": "kg", "kategori": "Kuru Gıda",
          "min_miktar": 20, "barkod": "8691234567890", "son_kullanma_tarihi": "2026-12-31",
-         "alis_fiyat": 18.50, "satis_fiyat": 25.90, "tedarikci": "ABC Un Fabrikası", "kdv_oran": 1,
-         "raf_no": "A1"},
+         "alis_fiyat": 18.50, "satis_fiyat": 25.90, "tedarikci": "ABC Un Fabrikası", "kdv_oran": 1, "raf_no": "A1"},
         {"urun_adi": "Şeker", "miktar": 5, "birim": "kg", "kategori": "Kuru Gıda",
          "min_miktar": 10, "barkod": "8691234567891", "son_kullanma_tarihi": "2026-05-15",
-         "alis_fiyat": 22.00, "satis_fiyat": 32.50, "tedarikci": "XYZ Şeker", "kdv_oran": 8,
-         "raf_no": "A2"},
+         "alis_fiyat": 22.00, "satis_fiyat": 32.50, "tedarikci": "XYZ Şeker", "kdv_oran": 8, "raf_no": "A2"},
         {"urun_adi": "Süt", "miktar": 40, "birim": "litre", "kategori": "Süt Ürünleri",
          "min_miktar": 15, "barkod": "8691234567892", "son_kullanma_tarihi": "2026-05-08",
-         "alis_fiyat": 12.00, "satis_fiyat": 18.90, "tedarikci": "Sütaş", "kdv_oran": 1,
-         "raf_no": "B1"},
+         "alis_fiyat": 12.00, "satis_fiyat": 18.90, "tedarikci": "Sütaş", "kdv_oran": 1, "raf_no": "B1"},
         {"urun_adi": "Yumurta", "miktar": 200, "birim": "adet", "kategori": "Diğer",
          "min_miktar": 30, "barkod": "8691234567893", "son_kullanma_tarihi": "2026-05-06",
-         "alis_fiyat": 2.50, "satis_fiyat": 4.50, "tedarikci": "Köy Yumurtası", "kdv_oran": 1,
-         "raf_no": "C1"},
+         "alis_fiyat": 2.50, "satis_fiyat": 4.50, "tedarikci": "Köy Yumurtası", "kdv_oran": 1, "raf_no": "C1"},
         {"urun_adi": "Tereyağı", "miktar": 25, "birim": "kg", "kategori": "Süt Ürünleri",
          "min_miktar": 5, "barkod": "8691234567894", "son_kullanma_tarihi": "2026-06-20",
-         "alis_fiyat": 120.00, "satis_fiyat": 175.00, "tedarikci": "Sütaş", "kdv_oran": 8,
-         "raf_no": "B2"},
+         "alis_fiyat": 120.00, "satis_fiyat": 175.00, "tedarikci": "Sütaş", "kdv_oran": 8, "raf_no": "B2"},
     ]
 
 def mock_fire_olustur():
@@ -150,7 +145,7 @@ def mock_barkod_db_olustur():
         "8691234567894": {"urun_adi": "Tereyağı", "birim": "kg", "kategori": "Süt Ürünleri", "uretici": "Sütaş"},
     }
 
-# ---------------------------- HAREKET KAYDI -------------------------
+# ---------------------------- HAREKET & SATIS KAYDI -----------------
 def hareket_ekle(kullanici, islem, urun_adi, detay=""):
     hareket = {
         "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -325,10 +320,11 @@ def barkod_sayfasi():
                     st.toast("✅ Eklendi", icon="✅", duration=5000)
                     st.rerun()
 
-# ---------------------------- STOK SAYFASI --------------------------
+# ---------------------------- STOK SAYFASI (DÜZENLE/SİL EKLENDİ) ----
 def stok_sayfasi():
     st.header("📦 Stok Yönetimi")
-    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle/Düzenle"])
+    tab1, tab2, tab3 = st.tabs(["📋 Liste", "➕ Ekle", "✏️ Düzenle/Sil"])
+    
     with tab1:
         df = pd.DataFrame(st.session_state.stok)
         if not df.empty:
@@ -337,6 +333,7 @@ def stok_sayfasi():
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), use_container_width=True)
         else:
             st.info("Henüz ürün yok.")
+    
     with tab2:
         st.subheader("Yeni Ürün Ekle")
         with st.form("manuel_ekle"):
@@ -371,6 +368,70 @@ def stok_sayfasi():
                     st.toast("✅ Ürün eklendi", icon="✅", duration=5000)
                     st.success(f"🎉 {urun_adi} başarıyla stoğa eklendi!")
                     st.rerun()
+    
+    with tab3:
+        st.subheader("Ürün Düzenle veya Sil")
+        if st.session_state.stok:
+            urun_listesi = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']})" for u in st.session_state.stok]
+            secili = st.selectbox("Ürün Seç", urun_listesi, key="duzenle_sec")
+            idx = urun_listesi.index(secili)
+            urun = st.session_state.stok[idx]
+            
+            with st.form("duzenle_form"):
+                col1, col2, col3 = st.columns(3)
+                yeni_ad = col1.text_input("Ürün Adı", value=urun["urun_adi"])
+                yeni_miktar = col1.number_input("Miktar", value=float(urun["miktar"]), min_value=0.0, format="%.2f")
+                birimler = BIRIMLER
+                try:
+                    birim_index = birimler.index(urun.get("birim", "adet"))
+                except ValueError:
+                    birim_index = 0
+                yeni_birim = col2.selectbox("Birim", birimler, index=birim_index)
+                try:
+                    kat_index = KATEGORILER.index(urun.get("kategori", "Diğer"))
+                except ValueError:
+                    kat_index = 0
+                yeni_kategori = col3.selectbox("Kategori", KATEGORILER, index=kat_index)
+                yeni_alis = col2.number_input("Alış Fiyatı", value=float(urun.get("alis_fiyat", 0)), format="%.2f")
+                yeni_satis = col3.number_input("Satış Fiyatı", value=float(urun.get("satis_fiyat", 0)), format="%.2f")
+                yeni_min = col1.number_input("Min Stok", value=float(urun.get("min_miktar", 0)), format="%.2f")
+                try:
+                    skt = datetime.strptime(urun.get("son_kullanma_tarihi", "2026-01-01"), "%Y-%m-%d")
+                except:
+                    skt = datetime.now()
+                yeni_skt = col2.date_input("SKT", value=skt)
+                yeni_raf = col3.text_input("Raf No", value=urun.get("raf_no", ""))
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.form_submit_button("💾 Güncelle"):
+                        if not yeni_ad.strip():
+                            st.error("Ürün adı boş olamaz!")
+                        else:
+                            st.session_state.stok[idx] = {
+                                "urun_adi": yeni_ad.strip(), "miktar": yeni_miktar, "birim": yeni_birim,
+                                "kategori": yeni_kategori, "min_miktar": yeni_min,
+                                "barkod": urun.get("barkod", ""), "son_kullanma_tarihi": yeni_skt.strftime("%Y-%m-%d"),
+                                "alis_fiyat": yeni_alis, "satis_fiyat": yeni_satis,
+                                "tedarikci": urun.get("tedarikci", ""), "raf_no": yeni_raf.strip(),
+                                "kdv_oran": urun.get("kdv_oran", 8)
+                            }
+                            veriyi_kaydet()
+                            st.toast("✅ Ürün güncellendi", icon="✏️", duration=5000)
+                            st.rerun()
+                
+                with col_btn2:
+                    # Silme butonu – onay kutusu ile
+                    sil_onay = st.checkbox("⚠️ Silme onayı", key=f"sil_{idx}")
+                    if sil_onay:
+                        if st.form_submit_button("🗑️ Sil"):
+                            silinen = st.session_state.stok.pop(idx)
+                            veriyi_kaydet()
+                            hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"], "Ürün stoğu silindi")
+                            st.toast(f"🗑️ {silinen['urun_adi']} silindi", icon="🗑️", duration=5000)
+                            st.rerun()
+        else:
+            st.info("Düzenlenecek ürün yok.")
 
 # ---------------------------- SATIŞ SAYFASI --------------------------
 def satis_sayfasi():
@@ -425,20 +486,38 @@ def satis_sayfasi():
             st.toast(f"✅ Satış tamamlandı: {toplam_tutar:.2f} ₺", icon="💵", duration=5000)
             st.rerun()
 
-# ---------------------------- SİPARİŞ SAYFASI -----------------------
+# ---------------------------- SİPARİŞ SAYFASI (SİLME EKLENDİ) -------
 def siparis_sayfasi():
     st.header("🔥 Sipariş Panosu")
-    df = pd.DataFrame(st.session_state.fire)
-    if not df.empty:
-        st.dataframe(df[["urun_adi","miktar","birim","aciliyet","durum"]], use_container_width=True)
-    with st.form("fire_ekle"):
-        ad = st.text_input("Ürün")
-        miktar = st.number_input("Miktar",0.01,format="%.2f")
-        if st.form_submit_button("Ekle"):
-            st.session_state.fire.append({"urun_adi":ad,"miktar":miktar,"birim":"adet","aciliyet":"⚡ Orta","durum":"Bekliyor","eklenme_tarihi":datetime.now().strftime("%Y-%m-%d %H:%M")})
-            veriyi_kaydet()
-            st.toast("Sipariş eklendi", icon="🔥", duration=5000)
-            st.rerun()
+    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle"])
+    with tab1:
+        df = pd.DataFrame(st.session_state.fire)
+        if not df.empty:
+            for i, row in df.iterrows():
+                col1, col2 = st.columns([4,1])
+                with col1:
+                    st.write(f"{row['urun_adi']} – {row['miktar']} {row['birim']} – {row['aciliyet']} – {row['durum']}")
+                with col2:
+                    if st.button("🗑️ Sil", key=f"sil_fire_{i}"):
+                        st.session_state.fire.pop(i)
+                        veriyi_kaydet()
+                        st.toast("Sipariş silindi", icon="🗑️", duration=5000)
+                        st.rerun()
+        else:
+            st.info("Henüz sipariş eklenmemiş.")
+    with tab2:
+        with st.form("fire_ekle"):
+            ad = st.text_input("Ürün")
+            miktar = st.number_input("Miktar",0.01,format="%.2f")
+            if st.form_submit_button("Ekle"):
+                st.session_state.fire.append({
+                    "urun_adi":ad,"miktar":miktar,"birim":"adet",
+                    "aciliyet":"⚡ Orta","durum":"Bekliyor",
+                    "eklenme_tarihi":datetime.now().strftime("%Y-%m-%d %H:%M")
+                })
+                veriyi_kaydet()
+                st.toast("Sipariş eklendi", icon="🔥", duration=5000)
+                st.rerun()
 
 # ---------------------------- FİRE ANALİZİ --------------------------
 def fire_analizi():
