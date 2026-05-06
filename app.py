@@ -15,18 +15,15 @@ from email.mime.base import MIMEBase
 from email import encoders
 from fpdf import FPDF
 
-# WhatsApp için pywhatkit'i deneyelim, yoksa hata vermeyelim
 try:
     import pywhatkit as pwk
     WHATSAPP_AKTIF = True
 except ImportError:
     WHATSAPP_AKTIF = False
 
-# ---------------------------- LOGLAMA --------------------------------
 logging.basicConfig(filename='app.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# ---------------------------- CONFIG ---------------------------
 CONFIG_DOSYASI = "config.json"
 VARSAYILAN_CONFIG = {
     "kullanici_adi": "admin",
@@ -74,7 +71,6 @@ ROLLER = config.get("roller", {"patron": ["tümü"], "kasiyer": ["barkod", "sati
 OTURUM_SURESI = config.get("oturum_suresi_dk", 30)
 SKT_UYARI_GUN = config.get("skt_uyari_gun", 3)
 
-# ---------------------------- GÜVENLİ HTML ---------------------------
 def guvenli_html(metin: str) -> str:
     return (str(metin).replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -82,11 +78,9 @@ def guvenli_html(metin: str) -> str:
             .replace('"', "&quot;")
             .replace("'", "&#x27;"))
 
-# ---------------------------- TEMA YÖNETİMİ ---------------------------
 def tema_degistir() -> None:
     st.session_state.tema = st.session_state.get("tema_secimi", "Koyu")
 
-# ---------------------------- MODERN CSS ------------------------------
 def enerjik_css(tema: str) -> None:
     if tema == "Koyu":
         bg = "#0B1121"; card = "#141B2D"; text = "#E2E8F0"; header_bg = "#141B2D"
@@ -154,7 +148,6 @@ def enerjik_css(tema: str) -> None:
     </style>
     """, unsafe_allow_html=True)
 
-# ---------------------------- DOSYA İŞLEMLERİ -----------------------
 def dosya_oku(dosya_adi: str, varsayilan=None):
     if os.path.exists(dosya_adi):
         try:
@@ -172,7 +165,6 @@ def dosya_yaz(dosya_adi: str, veri) -> bool:
     except Exception:
         return False
 
-# ---------------------------- VERİ GEÇİŞ KONTROL --------------------
 def veri_gecis_kontrol() -> None:
     degisti = False
     for u in st.session_state.stok:
@@ -194,7 +186,6 @@ def veri_gecis_kontrol() -> None:
     if degisti:
         veriyi_kaydet()
 
-# ---------------------------- MOCK VERİ -----------------------------
 def mock_stok_olustur() -> list:
     return [
         {"urun_adi": "Un", "miktar": 150, "birim": "kg", "kategori": "Kuru Gıda",
@@ -241,7 +232,6 @@ def mock_barkod_db_olustur() -> dict:
         "8691234567894": {"urun_adi": "Tereyağı", "birim": "kg", "kategori": "Süt Ürünleri", "uretici": "Sütaş"},
     }
 
-# ---------------------------- HAREKET KAYDI -------------------------
 def hareket_ekle(kul: str, islem: str, ad: str, detay: str = "") -> None:
     h = {"tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "kullanici": kul, "islem": islem,
          "urun_adi": ad, "detay": detay}
@@ -262,7 +252,8 @@ def satis_kaydet(ad: str, birim: str, miktar: float, fiyat: float, tutar: float,
     liste.append(s)
     dosya_yaz(SATIS_DOSYASI, liste)
 
-def bugunku_kar() -> float:
+# HATA DÜZELTMESİ: fonksiyon adı gunluk_kar olarak değiştirildi
+def gunluk_kar() -> float:
     liste = dosya_oku(SATIS_DOSYASI, [])
     bugun = datetime.now().strftime("%Y-%m-%d")
     toplam_satis = 0
@@ -274,7 +265,6 @@ def bugunku_kar() -> float:
             toplam_maliyet += maliyet
     return round(toplam_satis - toplam_maliyet, 2)
 
-# ---------------------------- SATIŞ İSTATİSTİKLERİ -------------------
 def gunluk_ciro(tarih=None) -> float:
     if tarih is None:
         tarih = datetime.now().strftime("%Y-%m-%d")
@@ -325,7 +315,6 @@ def en_cok_satanlar(n=5, gun=7) -> list:
     populer = df.groupby("urun_adi")["miktar"].sum().sort_values(ascending=False).head(n)
     return populer.index.tolist()
 
-# ---------------------------- WHATSAPP -------------------------------
 def whatsapp_gonder(telefon_no: str, mesaj: str) -> bool:
     if not WHATSAPP_AKTIF:
         return False
@@ -361,7 +350,6 @@ def kritik_stok_whatsapp_bildirimi() -> None:
                 st.session_state.whatsapp_bildirim_gonderildi = True
                 logging.info("WhatsApp bildirimi gönderildi.")
 
-# ---------------------------- E-POSTA --------------------------------
 def email_gonder(alici: str, konu: str, mesaj: str) -> bool:
     try:
         smtp_sunucu = "smtp.gmail.com"
@@ -427,7 +415,6 @@ def tedarikciye_siparis_gonder(urun: dict, tedarikci_eposta: str) -> bool:
     """
     return email_gonder(tedarikci_eposta, konu, mesaj)
 
-# ---------------------------- FİŞ -------------------------------
 def fis_olustur(urun_adi: str, birim: str, miktar: float, birim_fiyat: float,
                 toplam_tutar: float, odeme_tipi: str) -> FPDF:
     pdf = FPDF()
@@ -457,7 +444,6 @@ def fis_olustur(urun_adi: str, birim: str, miktar: float, birim_fiyat: float,
     pdf.cell(80, 6, txt="İyi günlerde kullanın!", ln=True, align='C')
     return pdf
 
-# ---------------------------- VERİ BİLİMİ FONKSİYONLARI ------------
 def urun_gunluk_satis_hizi(urun_adi: str, varsayilan: float = 1.0) -> float:
     satislar = dosya_oku(SATIS_DOSYASI, [])
     if not satislar:
@@ -509,7 +495,6 @@ def bilimsel_indirim_hesapla(urun: dict, kalan_gun: int) -> float:
         indirim = max(indirim, m * 100 * 0.2)
     return round(indirim, 1)
 
-# ---------------------------- OTURUM YÖNETİMİ -----------------------
 def oturumu_baslat() -> None:
     if "stok" not in st.session_state:
         st.session_state.stok = dosya_oku(STOK_DOSYASI, mock_stok_olustur())
@@ -551,7 +536,6 @@ def oturum_kontrol() -> None:
         else:
             st.session_state.last_activity = datetime.now()
 
-# ---------------------------- GİRİŞ --------------------------
 def giris_ekrani() -> None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -576,11 +560,11 @@ def giris_ekrani() -> None:
                     st.rerun()
                 else:
                     st.error("❌ Hatalı giriş!")
+
 def cikis() -> None:
     st.session_state.authenticated = False
     st.rerun()
 
-# ---------------------------- YETKİLENDİRME -------------------------
 def izinli_sayfalar(kullanici: dict) -> dict:
     if not kullanici:
         return {}
@@ -603,18 +587,16 @@ def izinli_sayfalar(kullanici: dict) -> dict:
                 break
     return izinli
 
-# ---------------------------- SAYFALAR --------------------------
 def ana_sayfa() -> None:
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
     kritik_stok_whatsapp_bildirimi()
     kritik = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u["min_miktar"]]
 
-    # HIZLI İSTATİSTİKLER (GÜNLÜK KÂR DAHİL)
     bugun = datetime.now().date()
     bugunku = gunluk_ciro(bugun.strftime("%Y-%m-%d"))
     dun = gunluk_ciro((bugun - timedelta(days=1)).strftime("%Y-%m-%d"))
     delta_gun = bugunku - dun
-    bugunku_kar = bugunku_kar()
+    bugunku_kar = gunluk_kar()  # DÜZELTİLDİ: gunluk_kar fonksiyonu çağrılıyor
 
     bu_hafta_baslangic = bugun - timedelta(days=bugun.weekday())
     gecen_hafta_baslangic = bu_hafta_baslangic - timedelta(days=7)
@@ -638,7 +620,6 @@ def ana_sayfa() -> None:
 
     st.markdown("---")
 
-    # STOK YENİLEME SİHİRBAZI
     with st.expander("🪄 Stok Yenileme Sihirbazı", expanded=bool(kritik)):
         if kritik:
             st.warning(f"🚨 {len(kritik)} ürün kritik stok seviyesinde!")
@@ -676,7 +657,6 @@ def ana_sayfa() -> None:
         else:
             st.success("✅ Tüm ürünler minimum stok seviyesinin üzerinde.")
 
-    # KRİTİK STOK VE SKT UYARILARI
     if kritik:
         st.markdown('<div class="sticky-alert">⚠️ KRİTİK STOK UYARISI</div>', unsafe_allow_html=True)
     skt = []
@@ -828,7 +808,6 @@ def pos_modu_sayfasi():
 
             st.markdown(f"### 🧾 Toplam: {toplam_tutar:.2f} ₺")
 
-            # Ödeme tipi seçimi
             odeme_tipi = st.selectbox("💳 Ödeme Tipi", ["Nakit", "Kredi Kartı", "Havale/EFT", "Yemek Kartı"], key="odeme_pos")
 
             col_btn1, col_btn2 = st.columns(2)
@@ -856,7 +835,6 @@ def pos_modu_sayfasi():
                                         "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
                                     })
                     veriyi_kaydet()
-                    # Fiş oluştur ve indirme butonu sun
                     if st.session_state.pos_sepet:
                         ilk_barkod = list(st.session_state.pos_sepet.keys())[0]
                         ilk_urun = next((u for u in st.session_state.stok if u.get("barkod") == ilk_barkod), None)
@@ -1352,9 +1330,8 @@ def kasa_kapanisi() -> None:
     st.subheader("📋 Satış Detayı")
     st.dataframe(df[["urun_adi", "miktar", "birim_fiyat", "toplam_tutar"]], width='stretch')
     st.metric("Toplam Satış", f"{toplam:.2f} ₺")
-    st.metric("💎 Net Kâr", f"{bugunku_kar():.2f} ₺")
+    st.metric("💎 Net Kâr", f"{gunluk_kar():.2f} ₺")  # DÜZELTİLDİ: gunluk_kar çağrılıyor
     
-    # Ödeme kanallarına göre dağılım
     st.subheader("💳 Ödeme Kanallarına Göre Dağılım")
     if not satislar:
         st.info("Bugün satış yok.")
