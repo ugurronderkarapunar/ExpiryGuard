@@ -251,13 +251,28 @@ def hareket_ekle(kul: str, islem: str, ad: str, detay: str = "") -> None:
         liste = liste[-1000:]
     dosya_yaz(HAREKET_DOSYASI, liste)
 
-def satis_kaydet(ad: str, birim: str, miktar: float, fiyat: float, tutar: float, kul: str) -> None:
+def satis_kaydet(ad: str, birim: str, miktar: float, fiyat: float, tutar: float, kul: str,
+                 alis_fiyat: float = 0, odeme_tipi: str = "Nakit") -> None:
     s = {"id": str(uuid.uuid4())[:8], "tarih": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
          "kullanici": kul, "urun_adi": ad, "birim": birim, "miktar": miktar,
-         "birim_fiyat": fiyat, "toplam_tutar": tutar}
+         "birim_fiyat": fiyat, "toplam_tutar": tutar,
+         "alis_fiyat": alis_fiyat, "maliyet": round(miktar * alis_fiyat, 2),
+         "odeme_tipi": odeme_tipi}
     liste = dosya_oku(SATIS_DOSYASI, [])
     liste.append(s)
     dosya_yaz(SATIS_DOSYASI, liste)
+
+def bugunku_kar() -> float:
+    liste = dosya_oku(SATIS_DOSYASI, [])
+    bugun = datetime.now().strftime("%Y-%m-%d")
+    toplam_satis = 0
+    toplam_maliyet = 0
+    for s in liste:
+        if s["tarih"].startswith(bugun):
+            toplam_satis += s["toplam_tutar"]
+            maliyet = s.get("maliyet", s.get("miktar", 0) * s.get("alis_fiyat", 0))
+            toplam_maliyet += maliyet
+    return round(toplam_satis - toplam_maliyet, 2)
 
 # ---------------------------- SATIŞ İSTATİSTİKLERİ -------------------
 def gunluk_ciro(tarih=None) -> float:
@@ -412,6 +427,36 @@ def tedarikciye_siparis_gonder(urun: dict, tedarikci_eposta: str) -> bool:
     """
     return email_gonder(tedarikci_eposta, konu, mesaj)
 
+# ---------------------------- FİŞ -------------------------------
+def fis_olustur(urun_adi: str, birim: str, miktar: float, birim_fiyat: float,
+                toplam_tutar: float, odeme_tipi: str) -> FPDF:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.add_font("DejaVu", "", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True)
+    pdf.set_font("DejaVu", size=10)
+    pdf.cell(80, 10, txt="🏪 Market Yönetim Sistemi", ln=True, align='C')
+    pdf.cell(80, 10, txt="ALIŞVERİŞ FİŞİ", ln=True, align='C')
+    pdf.ln(5)
+    pdf.set_font("DejaVu", size=8)
+    pdf.cell(80, 6, txt=f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align='C')
+    pdf.ln(5)
+    pdf.set_font("DejaVu", size=10)
+    pdf.cell(50, 8, txt="Ürün:", border=0)
+    pdf.cell(30, 8, txt=urun_adi[:20], border=0, ln=True)
+    pdf.cell(50, 8, txt="Miktar:", border=0)
+    pdf.cell(30, 8, txt=f"{miktar} {birim}", border=0, ln=True)
+    pdf.cell(50, 8, txt="Birim Fiyat:", border=0)
+    pdf.cell(30, 8, txt=f"{birim_fiyat:.2f} ₺", border=0, ln=True)
+    pdf.ln(3)
+    pdf.set_font("DejaVu", size=12)
+    pdf.cell(50, 10, txt="TOPLAM:", border=0)
+    pdf.cell(30, 10, txt=f"{toplam_tutar:.2f} ₺", border=0, ln=True)
+    pdf.set_font("DejaVu", size=8)
+    pdf.cell(50, 6, txt=f"Ödeme: {odeme_tipi}", border=0, ln=True)
+    pdf.ln(5)
+    pdf.cell(80, 6, txt="İyi günlerde kullanın!", ln=True, align='C')
+    return pdf
+
 # ---------------------------- VERİ BİLİMİ FONKSİYONLARI ------------
 def urun_gunluk_satis_hizi(urun_adi: str, varsayilan: float = 1.0) -> float:
     satislar = dosya_oku(SATIS_DOSYASI, [])
@@ -479,6 +524,8 @@ def oturumu_baslat() -> None:
             {"kullanici_adi": "admin", "sifre": hashlib.sha256("1234".encode()).hexdigest(), "rol": "patron",
              "ad": "Ahmet"}
         ])
+    if "pos_sepet" not in st.session_state:
+        st.session_state.pos_sepet = {}
     if "son_islem_mesaji" not in st.session_state:
         st.session_state.son_islem_mesaji = ""
     if "authenticated" not in st.session_state:
@@ -556,17 +603,18 @@ def izinli_sayfalar(kullanici: dict) -> dict:
                 break
     return izinli
 
-# ---------------------------- ANA SAYFA ------------------------------
+# ---------------------------- SAYFALAR --------------------------
 def ana_sayfa() -> None:
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
     kritik_stok_whatsapp_bildirimi()
     kritik = [u for u in st.session_state.stok if u.get("min_miktar", 0) > 0 and u["miktar"] <= u["min_miktar"]]
 
-    # HIZLI İSTATİSTİKLER
+    # HIZLI İSTATİSTİKLER (GÜNLÜK KÂR DAHİL)
     bugun = datetime.now().date()
     bugunku = gunluk_ciro(bugun.strftime("%Y-%m-%d"))
     dun = gunluk_ciro((bugun - timedelta(days=1)).strftime("%Y-%m-%d"))
     delta_gun = bugunku - dun
+    bugunku_kar = bugunku_kar()
 
     bu_hafta_baslangic = bugun - timedelta(days=bugun.weekday())
     gecen_hafta_baslangic = bu_hafta_baslangic - timedelta(days=7)
@@ -580,12 +628,13 @@ def ana_sayfa() -> None:
     delta_ay = bu_ay - gecen_ay
 
     st.subheader("📈 Hızlı İstatistikler")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Bugünkü Ciro", f"{bugunku:,.0f} ₺", delta=f"{delta_gun:+,.0f} ₺")
-    c2.metric("Dünkü Ciro", f"{dun:,.0f} ₺")
-    c3.metric("Bu Hafta", f"{bu_hafta:,.0f} ₺", delta=f"{delta_hafta:+,.0f} ₺")
-    c4.metric("Bu Ay", f"{bu_ay:,.0f} ₺", delta=f"{delta_ay:+,.0f} ₺")
-    c5.metric("Haftalık Büyüme", f"%{0 if gecen_hafta == 0 else (delta_hafta/gecen_hafta*100):.1f}")
+    c2.metric("Bugünkü Kâr", f"{bugunku_kar:,.0f} ₺")
+    c3.metric("Dünkü Ciro", f"{dun:,.0f} ₺")
+    c4.metric("Bu Hafta", f"{bu_hafta:,.0f} ₺", delta=f"{delta_hafta:+,.0f} ₺")
+    c5.metric("Bu Ay", f"{bu_ay:,.0f} ₺", delta=f"{delta_ay:+,.0f} ₺")
+    c6.metric("Haftalık Büyüme", f"%{0 if gecen_hafta == 0 else (delta_hafta/gecen_hafta*100):.1f}")
 
     st.markdown("---")
 
@@ -651,7 +700,332 @@ def ana_sayfa() -> None:
             oneri = bilimsel_indirim_hesapla(u, u['kalan'])
             st.warning(f"{guvenli_html(u['urun_adi'])}: {u['kalan']} gün → Önerilen İndirim: %{oneri}")
 
-# ---------------------------- STOK SAYIMI (BARKOD HIZLI) -------------
+def barkod_sayfasi() -> None:
+    st.markdown('<div class="main-header">📱 Barkod Okutma</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        barkod_manuel = st.text_input("🔢 Barkod Numarası", placeholder="Okutun veya yazın...", key="manuel_barkod")
+    with c2:
+        img_file = st.camera_input("📷 Mobil Kamera")
+    barkod = None
+    if img_file:
+        try:
+            import cv2, numpy as np
+            img = cv2.imdecode(np.asarray(bytearray(img_file.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+            detector = cv2.QRCodeDetector()
+            data, _, _ = detector.detectAndDecode(img)
+            if data:
+                barkod = data
+                st.success(f"✅ Okunan: {barkod}")
+            else:
+                st.warning("Barkod algılanamadı.")
+        except Exception as e:
+            st.error(f"Kamera hatası: {e}")
+    aktif = barkod_manuel or barkod
+    if aktif:
+        bilgi = st.session_state.barkod_db.get(aktif, {})
+        urun_adi = bilgi.get("urun_adi", "")
+        if urun_adi:
+            st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim', '')}) – {guvenli_html(bilgi.get('uretici', ''))}")
+        else:
+            st.warning("❓ Yeni barkod.")
+        with st.form("barkod_form"):
+            c1, c2 = st.columns(2)
+            ad = c1.text_input("Ürün Adı *", value=urun_adi)
+            miktar = c1.number_input("Miktar", 0.01, format="%.2f", value=1.0)
+            birim = c2.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(bilgi.get("birim", "adet")) if bilgi.get("birim") in BIRIMLER else 0)
+            kategori = c2.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
+            skt_var = c2.checkbox("Son kullanma tarihi var mı?", value=True)
+            skt = ""
+            if skt_var:
+                skt = c1.date_input("SKT")
+            islem = c2.radio("İşlem", ["📥 Giriş", "📤 Çıkış"], horizontal=True)
+            if st.form_submit_button("💾 Kaydet"):
+                if not ad.strip():
+                    st.error("Ad zorunlu")
+                else:
+                    if aktif not in st.session_state.barkod_db:
+                        st.session_state.barkod_db[aktif] = {"urun_adi": ad.strip(), "birim": birim, "kategori": kategori}
+                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+                    gercek = miktar if islem == "📥 Giriş" else -miktar
+                    skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
+                    for u in st.session_state.stok:
+                        if u.get("barkod") == aktif:
+                            u["miktar"] += gercek
+                            if skt_var:
+                                u["son_kullanma_tarihi"] = skt_str
+                            veriyi_kaydet()
+                            st.session_state.son_islem_mesaji = f"✅ {ad.strip()} güncellendi"
+                            st.rerun()
+                    st.session_state.stok.append({
+                        "urun_adi": ad.strip(), "miktar": max(0, gercek), "birim": birim,
+                        "kategori": kategori, "son_kullanma_tarihi": skt_str,
+                        "barkod": aktif, "min_miktar": 0, "alis_fiyat": 0, "satis_fiyat": 0
+                    })
+                    veriyi_kaydet()
+                    st.session_state.son_islem_mesaji = f"✅ {ad.strip()} eklendi"
+                    st.rerun()
+
+def pos_modu_sayfasi():
+    st.markdown('<div class="main-header">🛒 Hızlı Satış (POS Modu)</div>', unsafe_allow_html=True)
+    if "pos_sepet" not in st.session_state:
+        st.session_state.pos_sepet = {}
+
+    tab1, tab2 = st.tabs(["📷 Kamera ile Okut", "🔢 Manuel Satış"])
+
+    with tab1:
+        st.info("Barkodu okutunca ürün sepete eklenir. Aynı barkodu tekrar okutunca miktar artar.")
+        img_file = st.camera_input("📷 Barkodu gösterin", key="pos_kamera")
+        barkod_manuel = st.text_input("veya barkod numarasını yazın", key="pos_manuel_barkod", placeholder="Okutun veya yazın...")
+
+        barkod = None
+        if img_file is not None:
+            try:
+                import cv2, numpy as np
+                img = cv2.imdecode(np.asarray(bytearray(img_file.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+                detector = cv2.QRCodeDetector()
+                data, _, _ = detector.detectAndDecode(img)
+                if data:
+                    barkod = data
+                    st.success(f"✅ Okunan: {barkod}")
+            except Exception as e:
+                st.error(f"Kamera hatası: {e}")
+
+        if barkod_manuel:
+            barkod = barkod_manuel
+
+        if barkod:
+            if barkod in st.session_state.pos_sepet:
+                st.session_state.pos_sepet[barkod] += 1
+            else:
+                st.session_state.pos_sepet[barkod] = 1
+            st.toast(f"Sepete eklendi: {barkod} (x{st.session_state.pos_sepet[barkod]})", icon="🛒")
+            st.rerun()
+
+        if st.session_state.pos_sepet:
+            st.subheader("🧺 Sepet")
+            toplam_tutar = 0
+            for barkod_kodu, adet in st.session_state.pos_sepet.items():
+                urun = next((u for u in st.session_state.stok if u.get("barkod") == barkod_kodu), None)
+                if urun:
+                    fiyat = urun.get("satis_fiyat", 0)
+                    tutar = fiyat * adet
+                    toplam_tutar += tutar
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"📦 {guvenli_html(urun['urun_adi'])} – {adet} {urun['birim']} x {fiyat:.2f} ₺ = {tutar:.2f} ₺")
+                    with col2:
+                        yeni_adet = st.number_input("Adet", min_value=1, value=adet, key=f"adet_{barkod_kodu}")
+                        if yeni_adet != adet:
+                            st.session_state.pos_sepet[barkod_kodu] = yeni_adet
+                            st.rerun()
+                    with col3:
+                        if st.button("🗑️", key=f"sil_{barkod_kodu}"):
+                            del st.session_state.pos_sepet[barkod_kodu]
+                            st.rerun()
+                else:
+                    st.warning(f"❓ {barkod_kodu} barkodu bulunamadı, lütfen stok girişi yapın.")
+
+            st.markdown(f"### 🧾 Toplam: {toplam_tutar:.2f} ₺")
+
+            # Ödeme tipi seçimi
+            odeme_tipi = st.selectbox("💳 Ödeme Tipi", ["Nakit", "Kredi Kartı", "Havale/EFT", "Yemek Kartı"], key="odeme_pos")
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("💳 Satışı Tamamla", type="primary", use_container_width=True):
+                    for barkod_kodu, adet in st.session_state.pos_sepet.items():
+                        urun = next((u for u in st.session_state.stok if u.get("barkod") == barkod_kodu), None)
+                        if urun and urun["miktar"] >= adet:
+                            fiyat = urun.get("satis_fiyat", 0)
+                            urun["miktar"] -= adet
+                            satis_kaydet(urun["urun_adi"], urun["birim"], adet, fiyat, fiyat * adet,
+                                         st.session_state.current_user["kullanici_adi"],
+                                         urun.get("alis_fiyat", 0), odeme_tipi)
+                            hareket_ekle(st.session_state.current_user["kullanici_adi"], "POS Satış",
+                                         urun["urun_adi"], f"{adet} {urun['birim']} satıldı, tutar: {fiyat * adet:.2f} ₺")
+                            if urun["miktar"] <= urun.get("min_miktar", 0) and urun.get("min_miktar", 0) > 0:
+                                if not any(f["urun_adi"] == urun["urun_adi"] and f["durum"] == "Bekliyor" for f in st.session_state.fire):
+                                    st.session_state.fire.append({
+                                        "urun_adi": urun["urun_adi"],
+                                        "miktar": urun["min_miktar"] - urun["miktar"] + 1,
+                                        "birim": urun["birim"],
+                                        "aciliyet": "🔥 Yüksek",
+                                        "tedarikci": urun.get("tedarikci", ""),
+                                        "durum": "Bekliyor",
+                                        "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
+                                    })
+                    veriyi_kaydet()
+                    # Fiş oluştur ve indirme butonu sun
+                    if st.session_state.pos_sepet:
+                        ilk_barkod = list(st.session_state.pos_sepet.keys())[0]
+                        ilk_urun = next((u for u in st.session_state.stok if u.get("barkod") == ilk_barkod), None)
+                        if ilk_urun:
+                            pdf = fis_olustur(ilk_urun["urun_adi"], ilk_urun["birim"],
+                                              st.session_state.pos_sepet[ilk_barkod],
+                                              ilk_urun.get("satis_fiyat", 0), toplam_tutar, odeme_tipi)
+                            pdf.output("fis.pdf")
+                            with open("fis.pdf", "rb") as f:
+                                st.download_button("🧾 Fişi İndir (PDF)", f.read(), "fis.pdf", mime="application/pdf")
+                    st.session_state.pos_sepet = {}
+                    st.success(f"✅ Satış tamamlandı! Toplam: {toplam_tutar:.2f} ₺")
+                    st.rerun()
+            with col_btn2:
+                if st.button("🗑️ Sepeti Temizle", use_container_width=True):
+                    st.session_state.pos_sepet = {}
+                    st.rerun()
+
+    with tab2:
+        satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
+        if not satilabilir:
+            st.warning("Satılacak ürün yok")
+        else:
+            secili_str = st.selectbox("Ürün Seçin", [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir])
+            idx = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir].index(secili_str)
+            urun = satilabilir[idx]
+            fiyat = urun.get("satis_fiyat", 0)
+            mevcut = urun["miktar"]
+            miktar = st.number_input("Miktar", 0.01, float(mevcut), format="%.2f", value=1.0)
+            st.metric("Birim Fiyat", f"{fiyat:.2f} ₺")
+            toplam = miktar * fiyat
+            odeme_tipi = st.selectbox("💳 Ödeme Tipi", ["Nakit", "Kredi Kartı", "Havale/EFT", "Yemek Kartı"])
+            st.markdown(f"### 🧾 Toplam: {toplam:.2f} ₺")
+            if st.button("💳 Manuel Satış Yap", type="primary", use_container_width=True):
+                if miktar <= 0 or miktar > mevcut:
+                    st.error("Geçersiz miktar")
+                else:
+                    urun["miktar"] -= miktar
+                    satis_kaydet(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam,
+                                 st.session_state.current_user["kullanici_adi"],
+                                 urun.get("alis_fiyat", 0), odeme_tipi)
+                    hareket_ekle(st.session_state.current_user["kullanici_adi"], "Manuel Satış",
+                                 urun["urun_adi"], f"{miktar} {urun['birim']} satıldı, tutar: {toplam:.2f} ₺")
+                    if urun["miktar"] <= urun.get("min_miktar", 0) and urun.get("min_miktar", 0) > 0:
+                        if not any(f["urun_adi"] == urun["urun_adi"] and f["durum"] == "Bekliyor" for f in st.session_state.fire):
+                            st.session_state.fire.append({
+                                "urun_adi": urun["urun_adi"],
+                                "miktar": urun["min_miktar"] - urun["miktar"] + 1,
+                                "birim": urun["birim"],
+                                "aciliyet": "🔥 Yüksek",
+                                "tedarikci": urun.get("tedarikci", ""),
+                                "durum": "Bekliyor",
+                                "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
+                            })
+                    veriyi_kaydet()
+                    pdf = fis_olustur(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam, odeme_tipi)
+                    pdf.output("fis.pdf")
+                    with open("fis.pdf", "rb") as f:
+                        st.download_button("🧾 Fişi İndir (PDF)", f.read(), "fis.pdf", mime="application/pdf")
+                    st.success(f"✅ Satış: {toplam:.2f} ₺")
+                    st.rerun()
+
+    if st.button("🚪 POS Modundan Çık"):
+        st.session_state.pos_modu = False
+        st.rerun()
+
+def satis_sayfasi() -> None:
+    if st.session_state.get("pos_modu", False):
+        pos_modu_sayfasi()
+        return
+    st.markdown('<div class="main-header">💰 Satış (POS)</div>', unsafe_allow_html=True)
+    if st.button("🚀 Hızlı POS Moduna Geç (Barkod Okut = Anında Satış)"):
+        st.session_state.pos_modu = True
+        st.session_state.pos_sepet = {}
+        st.rerun()
+    satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
+    if not satilabilir:
+        st.warning("Satılacak ürün yok")
+        return
+    populer = en_cok_satanlar(5, gun=7)
+    if populer:
+        st.subheader("⚡ Son 7 Günün En Çok Satanları")
+        kisa_sutun = st.columns(len(populer))
+        for i, urun_adi in enumerate(populer):
+            urun = next((u for u in satilabilir if u["urun_adi"] == urun_adi), None)
+            if urun:
+                with kisa_sutun[i]:
+                    if st.button(f"🛒 {urun['urun_adi']}\n1 {urun['birim']}", key=f"hizli_{urun_adi}"):
+                        urun["miktar"] -= 1
+                        satis_kaydet(urun["urun_adi"], urun["birim"], 1, urun.get("satis_fiyat", 0),
+                                     urun.get("satis_fiyat", 0), st.session_state.current_user["kullanici_adi"])
+                        veriyi_kaydet()
+                        st.session_state.son_islem_mesaji = f"✅ Hızlı satış: {urun['urun_adi']}"
+                        st.rerun()
+    with st.expander("📷 QR ile Hızlı Satış (Mobil Kamera)", expanded=False):
+        qr_img = st.camera_input("QR / Barkod okut", key="qr_satis")
+        if qr_img:
+            try:
+                import cv2, numpy as np
+                img = cv2.imdecode(np.asarray(bytearray(qr_img.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+                detector = cv2.QRCodeDetector()
+                data, _, _ = detector.detectAndDecode(img)
+                if data:
+                    for u in satilabilir:
+                        if u.get("barkod") == data:
+                            st.success(f"✅ {u['urun_adi']} bulundu, sepete eklendi.")
+                            u["miktar"] -= 1
+                            satis_kaydet(u["urun_adi"], u["birim"], 1, u.get("satis_fiyat", 0),
+                                         u.get("satis_fiyat", 0), st.session_state.current_user["kullanici_adi"])
+                            veriyi_kaydet()
+                            st.session_state.son_islem_mesaji = f"✅ QR satış: {u['urun_adi']}"
+                            st.rerun()
+                    st.error("Barkod eşleşmedi.")
+                else:
+                    st.warning("QR kod çözülemedi.")
+            except Exception as e:
+                st.error(f"Kamera hatası: {e}")
+    secili_str = st.selectbox("Ürün Seçin", [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir])
+    idx = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir].index(secili_str)
+    urun = satilabilir[idx]
+    fiyat = urun.get("satis_fiyat", 0)
+    mevcut = urun["miktar"]
+    c1, c2 = st.columns(2)
+    with c1:
+        miktar = st.number_input("Miktar", 0.01, float(mevcut), format="%.2f", value=1.0)
+    with c2:
+        st.metric("Birim Fiyat", f"{fiyat:.2f} ₺")
+    kalan = mevcut - miktar
+    st.metric("📦 Kalan Stok", f"{kalan:.2f} {urun['birim']}")
+    toplam = miktar * fiyat
+    odeme_tipi = st.selectbox("💳 Ödeme Tipi", ["Nakit", "Kredi Kartı", "Havale/EFT", "Yemek Kartı"])
+    st.markdown(f"### 🧾 Toplam: {toplam:.2f} ₺")
+    with st.expander("📋 Son Satış Geçmişi"):
+        son = [s for s in dosya_oku(SATIS_DOSYASI, []) if s["urun_adi"] == urun["urun_adi"]]
+        son = sorted(son, key=lambda x: x["tarih"], reverse=True)[:3]
+        if son:
+            for s in son:
+                st.caption(f"🕒 {s['tarih']} – {s['miktar']} {s['birim']} – {s['toplam_tutar']:.2f} ₺")
+        else:
+            st.caption("Henüz satış yok.")
+    if st.button("💳 Satış Yap", type="primary", use_container_width=True):
+        if miktar <= 0 or miktar > mevcut:
+            st.error("Geçersiz miktar")
+        else:
+            for u in st.session_state.stok:
+                if u["urun_adi"] == urun["urun_adi"] and u.get("barkod") == urun.get("barkod"):
+                    u["miktar"] = round(u["miktar"] - miktar, 2)
+                    if u["miktar"] <= u.get("min_miktar", 0):
+                        if not any(f["urun_adi"] == u["urun_adi"] and f["durum"] == "Bekliyor" for f in st.session_state.fire):
+                            st.session_state.fire.append({
+                                "urun_adi": u["urun_adi"], "miktar": u["min_miktar"] - u["miktar"] + 2,
+                                "birim": u["birim"], "aciliyet": "🔥 Yüksek",
+                                "tedarikci": u.get("tedarikci", ""), "durum": "Bekliyor",
+                                "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
+                            })
+                    break
+            satis_kaydet(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam,
+                         st.session_state.current_user["kullanici_adi"] if st.session_state.current_user else "kasiyer",
+                         urun.get("alis_fiyat", 0), odeme_tipi)
+            hareket_ekle(st.session_state.current_user["kullanici_adi"], "Satış", urun["urun_adi"],
+                         f"{miktar} {urun['birim']} satıldı, tutar: {toplam:.2f} ₺")
+            veriyi_kaydet()
+            pdf = fis_olustur(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam, odeme_tipi)
+            pdf.output("fis.pdf")
+            with open("fis.pdf", "rb") as f:
+                st.download_button("🧾 Fişi İndir (PDF)", f.read(), "fis.pdf", mime="application/pdf")
+            st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} ₺"
+            st.rerun()
+
 def stok_sayfasi() -> None:
     st.markdown('<div class="main-header">📦 Stok Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
@@ -769,11 +1143,9 @@ def stok_sayfasi() -> None:
         st.subheader("🔢 Stok Sayım (Barkod ile Hızlı Eşleştirme)")
         st.info("📱 Barkod okutarak veya manuel barkod girerek anında ilgili ürünü bulup sayım yapabilirsiniz.")
         
-        # Kamera butonu (mobil için)
         kamera_img = st.camera_input("📷 Barkodu kameraya gösterin", key="sayim_kamera")
         sayim_barkod = st.text_input("🔍 veya barkodu manuel yazın", key="sayim_barkod", placeholder="Barkodu okutun veya yazın...")
         
-        # Kameradan barkod okunduysa otomatik doldur
         if kamera_img and not sayim_barkod:
             try:
                 import cv2, numpy as np
@@ -845,163 +1217,6 @@ def stok_sayfasi() -> None:
                 st.rerun()
             except Exception as e:
                 st.error(f"CSV işlenirken hata: {e}")
-
-# ---------------------------- DİĞER SAYFALAR (ÖZET) -------------------
-def barkod_sayfasi() -> None:
-    st.markdown('<div class="main-header">📱 Barkod Okutma</div>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        barkod_manuel = st.text_input("🔢 Barkod Numarası", placeholder="Okutun veya yazın...", key="manuel_barkod")
-    with c2:
-        img_file = st.camera_input("📷 Mobil Kamera")
-    barkod = None
-    if img_file:
-        try:
-            import cv2, numpy as np
-            img = cv2.imdecode(np.asarray(bytearray(img_file.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
-            detector = cv2.QRCodeDetector()
-            data, _, _ = detector.detectAndDecode(img)
-            if data:
-                barkod = data
-                st.success(f"✅ Okunan: {barkod}")
-            else:
-                st.warning("Barkod algılanamadı.")
-        except Exception as e:
-            st.error(f"Kamera hatası: {e}")
-    aktif = barkod_manuel or barkod
-    if aktif:
-        bilgi = st.session_state.barkod_db.get(aktif, {})
-        urun_adi = bilgi.get("urun_adi", "")
-        if urun_adi:
-            st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim', '')}) – {guvenli_html(bilgi.get('uretici', ''))}")
-        else:
-            st.warning("❓ Yeni barkod.")
-        with st.form("barkod_form"):
-            c1, c2 = st.columns(2)
-            ad = c1.text_input("Ürün Adı *", value=urun_adi)
-            miktar = c1.number_input("Miktar", 0.01, format="%.2f", value=1.0)
-            birim = c2.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(bilgi.get("birim", "adet")) if bilgi.get("birim") in BIRIMLER else 0)
-            kategori = c2.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(bilgi.get("kategori", "Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            skt_var = c2.checkbox("Son kullanma tarihi var mı?", value=True)
-            skt = ""
-            if skt_var:
-                skt = c1.date_input("SKT")
-            islem = c2.radio("İşlem", ["📥 Giriş", "📤 Çıkış"], horizontal=True)
-            if st.form_submit_button("💾 Kaydet"):
-                if not ad.strip():
-                    st.error("Ad zorunlu")
-                else:
-                    if aktif not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[aktif] = {"urun_adi": ad.strip(), "birim": birim, "kategori": kategori}
-                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
-                    gercek = miktar if islem == "📥 Giriş" else -miktar
-                    skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
-                    for u in st.session_state.stok:
-                        if u.get("barkod") == aktif:
-                            u["miktar"] += gercek
-                            if skt_var:
-                                u["son_kullanma_tarihi"] = skt_str
-                            veriyi_kaydet()
-                            st.session_state.son_islem_mesaji = f"✅ {ad.strip()} güncellendi"
-                            st.rerun()
-                    st.session_state.stok.append({
-                        "urun_adi": ad.strip(), "miktar": max(0, gercek), "birim": birim,
-                        "kategori": kategori, "son_kullanma_tarihi": skt_str,
-                        "barkod": aktif, "min_miktar": 0, "alis_fiyat": 0, "satis_fiyat": 0
-                    })
-                    veriyi_kaydet()
-                    st.session_state.son_islem_mesaji = f"✅ {ad.strip()} eklendi"
-                    st.rerun()
-
-def satis_sayfasi() -> None:
-    st.markdown('<div class="main-header">💰 Satış (POS)</div>', unsafe_allow_html=True)
-    satilabilir = [u for u in st.session_state.stok if u["miktar"] > 0]
-    if not satilabilir:
-        st.warning("Satılacak ürün yok")
-        return
-    populer = en_cok_satanlar(5, gun=7)
-    if populer:
-        st.subheader("⚡ Son 7 Günün En Çok Satanları")
-        kisa_sutun = st.columns(len(populer))
-        for i, urun_adi in enumerate(populer):
-            urun = next((u for u in satilabilir if u["urun_adi"] == urun_adi), None)
-            if urun:
-                with kisa_sutun[i]:
-                    if st.button(f"🛒 {urun['urun_adi']}\n1 {urun['birim']}", key=f"hizli_{urun_adi}"):
-                        urun["miktar"] -= 1
-                        satis_kaydet(urun["urun_adi"], urun["birim"], 1, urun.get("satis_fiyat", 0),
-                                     urun.get("satis_fiyat", 0), st.session_state.current_user["kullanici_adi"])
-                        veriyi_kaydet()
-                        st.session_state.son_islem_mesaji = f"✅ Hızlı satış: {urun['urun_adi']}"
-                        st.rerun()
-    with st.expander("📷 QR ile Hızlı Satış (Mobil Kamera)", expanded=False):
-        qr_img = st.camera_input("QR / Barkod okut", key="qr_satis")
-        if qr_img:
-            try:
-                import cv2, numpy as np
-                img = cv2.imdecode(np.asarray(bytearray(qr_img.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
-                detector = cv2.QRCodeDetector()
-                data, _, _ = detector.detectAndDecode(img)
-                if data:
-                    for u in satilabilir:
-                        if u.get("barkod") == data:
-                            st.success(f"✅ {u['urun_adi']} bulundu, sepete eklendi.")
-                            u["miktar"] -= 1
-                            satis_kaydet(u["urun_adi"], u["birim"], 1, u.get("satis_fiyat", 0),
-                                         u.get("satis_fiyat", 0), st.session_state.current_user["kullanici_adi"])
-                            veriyi_kaydet()
-                            st.session_state.son_islem_mesaji = f"✅ QR satış: {u['urun_adi']}"
-                            st.rerun()
-                    st.error("Barkod eşleşmedi.")
-                else:
-                    st.warning("QR kod çözülemedi.")
-            except Exception as e:
-                st.error(f"Kamera hatası: {e}")
-    secili_str = st.selectbox("Ürün Seçin", [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir])
-    idx = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']} - {u.get('satis_fiyat', 0):.2f} ₺)" for u in satilabilir].index(secili_str)
-    urun = satilabilir[idx]
-    fiyat = urun.get("satis_fiyat", 0)
-    mevcut = urun["miktar"]
-    c1, c2 = st.columns(2)
-    with c1:
-        miktar = st.number_input("Miktar", 0.01, float(mevcut), format="%.2f", value=1.0)
-    with c2:
-        st.metric("Birim Fiyat", f"{fiyat:.2f} ₺")
-    kalan = mevcut - miktar
-    st.metric("📦 Kalan Stok", f"{kalan:.2f} {urun['birim']}")
-    toplam = miktar * fiyat
-    st.markdown(f"### 🧾 Toplam: {toplam:.2f} ₺")
-    with st.expander("📋 Son Satış Geçmişi"):
-        son = [s for s in dosya_oku(SATIS_DOSYASI, []) if s["urun_adi"] == urun["urun_adi"]]
-        son = sorted(son, key=lambda x: x["tarih"], reverse=True)[:3]
-        if son:
-            for s in son:
-                st.caption(f"🕒 {s['tarih']} – {s['miktar']} {s['birim']} – {s['toplam_tutar']:.2f} ₺")
-        else:
-            st.caption("Henüz satış yok.")
-    if st.button("💳 Satış Yap", type="primary", use_container_width=True):
-        if miktar <= 0 or miktar > mevcut:
-            st.error("Geçersiz miktar")
-        else:
-            for u in st.session_state.stok:
-                if u["urun_adi"] == urun["urun_adi"] and u.get("barkod") == urun.get("barkod"):
-                    u["miktar"] = round(u["miktar"] - miktar, 2)
-                    if u["miktar"] <= u.get("min_miktar", 0):
-                        if not any(f["urun_adi"] == u["urun_adi"] and f["durum"] == "Bekliyor" for f in st.session_state.fire):
-                            st.session_state.fire.append({
-                                "urun_adi": u["urun_adi"], "miktar": u["min_miktar"] - u["miktar"] + 2,
-                                "birim": u["birim"], "aciliyet": "🔥 Yüksek",
-                                "tedarikci": u.get("tedarikci", ""), "durum": "Bekliyor",
-                                "eklenme_tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
-                            })
-                    break
-            satis_kaydet(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam,
-                         st.session_state.current_user["kullanici_adi"] if st.session_state.current_user else "kasiyer")
-            hareket_ekle(st.session_state.current_user["kullanici_adi"], "Satış", urun["urun_adi"],
-                         f"{miktar} {urun['birim']} satıldı, tutar: {toplam:.2f} ₺")
-            veriyi_kaydet()
-            st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} ₺"
-            st.rerun()
 
 def tedarikci_sayfasi() -> None:
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
@@ -1137,6 +1352,20 @@ def kasa_kapanisi() -> None:
     st.subheader("📋 Satış Detayı")
     st.dataframe(df[["urun_adi", "miktar", "birim_fiyat", "toplam_tutar"]], width='stretch')
     st.metric("Toplam Satış", f"{toplam:.2f} ₺")
+    st.metric("💎 Net Kâr", f"{bugunku_kar():.2f} ₺")
+    
+    # Ödeme kanallarına göre dağılım
+    st.subheader("💳 Ödeme Kanallarına Göre Dağılım")
+    if not satislar:
+        st.info("Bugün satış yok.")
+    else:
+        if "odeme_tipi" in df.columns:
+            odeme_ozet = df.groupby("odeme_tipi")["toplam_tutar"].sum()
+            for kanal, tutar in odeme_ozet.items():
+                st.metric(f"💳 {kanal}", f"{tutar:,.2f} ₺")
+        else:
+            st.info("Ödeme kanalı bilgisi bulunamadı (eski kayıtlar).")
+
     if st.button("📄 PDF İndir"):
         pdf = FPDF(); pdf.add_page()
         pdf.add_font("DejaVu", "", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", uni=True); pdf.set_font("DejaVu", size=12)
