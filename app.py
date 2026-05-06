@@ -665,10 +665,127 @@ def stok_sayfasi() -> None:
             st.dataframe(df.style.apply(style_row, axis=1).format(precision=2), width='stretch')
         else:
             st.info("Ürün yok.")
-    # ... (tab2, tab3, tab5 aynı, tab4 barkodlu sayım)
+    with tab2:
+        with st.form("manuel_ekle"):
+            barkod = st.text_input("Barkod")
+            barkod_bilgi = st.session_state.barkod_db.get(barkod, {}) if barkod else {}
+            c1, c2, c3 = st.columns(3)
+            ad = c1.text_input("Ürün Adı *", value=barkod_bilgi.get("urun_adi", ""))
+            miktar = c1.number_input("Miktar", 0.0, format="%.2f")
+            birim = c2.selectbox("Birim", BIRIMLER,
+                                 index=BIRIMLER.index(barkod_bilgi.get("birim", "adet")) if barkod_bilgi.get(
+                                     "birim") in BIRIMLER else 0)
+            kategori = c3.selectbox("Kategori", KATEGORILER,
+                                    index=KATEGORILER.index(barkod_bilgi.get("kategori", "Diğer")) if barkod_bilgi.get(
+                                        "kategori") in KATEGORILER else 0)
+            alis = c2.number_input("Alış Fiyatı", 0.0, format="%.2f")
+            satis = c3.number_input("Satış Fiyatı", 0.0, format="%.2f")
+            min_m = c1.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
+            tahmini_gunluk = c2.number_input("Tahmini Günlük Satış", 0.1, format="%.1f", value=1.0)
+            skt_var = c3.checkbox("Son kullanma tarihi var mı?", value=True)
+            skt = ""
+            if skt_var:
+                skt = c1.date_input("SKT")
+            raf = c2.text_input("Raf")
+            if st.form_submit_button("💾 Kaydet"):
+                if not ad.strip():
+                    st.error("Ad zorunlu")
+                else:
+                    skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
+                    if barkod and barkod not in st.session_state.barkod_db:
+                        st.session_state.barkod_db[barkod] = {"urun_adi": ad.strip(), "birim": birim,
+                                                              "kategori": kategori}
+                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+                    st.session_state.stok.append(
+                        {"urun_adi": ad.strip(), "miktar": miktar, "birim": birim,
+                         "kategori": kategori, "min_miktar": min_m, "barkod": barkod.strip(),
+                         "son_kullanma_tarihi": skt_str, "alis_fiyat": alis, "satis_fiyat": satis,
+                         "raf_no": raf.strip(), "tahmini_gunluk_satis": tahmini_gunluk})
+                    veriyi_kaydet()
+                    st.session_state.son_islem_mesaji = f"🎉 {ad.strip()} stoğa eklendi!"
+                    st.rerun()
+    with tab3:
+        if st.session_state.stok:
+            urunler = [f"{guvenli_html(u['urun_adi'])} ({u['miktar']:.2f} {u['birim']})" for u in
+                       st.session_state.stok]
+            secili = st.selectbox("Ürün Seç", urunler, key="duzenle_sec")
+            idx = urunler.index(secili)
+            urun = st.session_state.stok[idx]
+            with st.form("duzenle_form"):
+                c1, c2, c3 = st.columns(3)
+                yeni_ad = c1.text_input("Ürün Adı", value=urun["urun_adi"])
+                yeni_miktar = c1.number_input("Miktar", value=float(urun["miktar"]), min_value=0.0, format="%.2f")
+                birim_index = BIRIMLER.index(urun.get("birim", "adet")) if urun.get("birim") in BIRIMLER else 0
+                yeni_birim = c2.selectbox("Birim", BIRIMLER, index=birim_index)
+                kat_index = KATEGORILER.index(urun.get("kategori", "Diğer")) if urun.get(
+                    "kategori") in KATEGORILER else 0
+                yeni_kategori = c3.selectbox("Kategori", KATEGORILER, index=kat_index)
+                yeni_alis = c2.number_input("Alış Fiyatı", value=float(urun.get("alis_fiyat", 0)), format="%.2f")
+                yeni_satis = c3.number_input("Satış Fiyatı", value=float(urun.get("satis_fiyat", 0)), format="%.2f")
+                yeni_min = c1.number_input("Min Stok", value=float(urun.get("min_miktar", 0)), format="%.2f")
+                yeni_tahmini = c2.number_input("Tahmini Günlük Satış", 0.1, format="%.1f",
+                                               value=float(urun.get("tahmini_gunluk_satis", 1.0)))
+                mevcut_skt = urun.get("son_kullanma_tarihi", "")
+                skt_var = c3.checkbox("Son kullanma tarihi var", value=bool(mevcut_skt))
+                yeni_skt = ""
+                if skt_var:
+                    try:
+                        if mevcut_skt:
+                            skt_date = datetime.strptime(mevcut_skt, "%Y-%m-%d")
+                        else:
+                            skt_date = datetime.now()
+                    except Exception:
+                        skt_date = datetime.now()
+                    yeni_skt = c1.date_input("SKT", value=skt_date)
+                yeni_raf = c2.text_input("Raf", value=urun.get("raf_no", ""))
+                if st.form_submit_button("💾 Güncelle"):
+                    if not yeni_ad.strip():
+                        st.error("Ad zorunlu")
+                    else:
+                        skt_str = yeni_skt.strftime("%Y-%m-%d") if skt_var else ""
+                        st.session_state.stok[idx] = {
+                            "urun_adi": yeni_ad.strip(), "miktar": yeni_miktar, "birim": yeni_birim,
+                            "kategori": yeni_kategori, "min_miktar": yeni_min,
+                            "barkod": urun.get("barkod", ""), "son_kullanma_tarihi": skt_str,
+                            "alis_fiyat": yeni_alis, "satis_fiyat": yeni_satis,
+                            "tedarikci": urun.get("tedarikci", ""), "raf_no": yeni_raf.strip(),
+                            "kdv_oran": urun.get("kdv_oran", 8), "tahmini_gunluk_satis": yeni_tahmini
+                        }
+                        veriyi_kaydet()
+                        st.session_state.son_islem_mesaji = f"✅ {yeni_ad.strip()} güncellendi"
+                        st.rerun()
+            with st.popover("🗑️ Sil"):
+                st.warning("Geri alınamaz!")
+                if st.button("⚠️ Onayla", key=f"pop_sil_{idx}"):
+                    silinen = st.session_state.stok.pop(idx)
+                    veriyi_kaydet()
+                    hareket_ekle(st.session_state.current_user["kullanici_adi"], "Silme", silinen["urun_adi"],
+                                 "Ürün stoğu silindi")
+                    st.session_state.son_islem_mesaji = f"🗑️ {silinen['urun_adi']} silindi"
+                    st.rerun()
+        else:
+            st.info("Ürün yok.")
     with tab4:
         st.subheader("🔢 Stok Sayım (Barkod ile Hızlı Eşleştirme)")
-        sayim_barkod = st.text_input("🔍 Sayım için barkod okutun", key="sayim_barkod", placeholder="Barkodu okutun veya yazın...")
+        st.info("📱 Barkod okutarak veya manuel barkod girerek anında ilgili ürünü bulup sayım yapabilirsiniz.")
+        
+        # Kamera butonu (mobil için)
+        kamera_img = st.camera_input("📷 Barkodu kameraya gösterin", key="sayim_kamera")
+        sayim_barkod = st.text_input("🔍 veya barkodu manuel yazın", key="sayim_barkod", placeholder="Barkodu okutun veya yazın...")
+        
+        # Kameradan barkod okunduysa otomatik doldur
+        if kamera_img and not sayim_barkod:
+            try:
+                import cv2, numpy as np
+                img = cv2.imdecode(np.asarray(bytearray(kamera_img.read()), dtype=np.uint8), cv2.IMREAD_COLOR)
+                detector = cv2.QRCodeDetector()
+                data, _, _ = detector.detectAndDecode(img)
+                if data:
+                    sayim_barkod = data
+                    st.success(f"✅ Okunan barkod: {sayim_barkod}")
+            except Exception as e:
+                st.error(f"Kamera hatası: {e}")
+        
         if sayim_barkod:
             bulunan = next((u for u in st.session_state.stok if u.get("barkod") == sayim_barkod), None)
             if bulunan:
@@ -685,6 +802,7 @@ def stok_sayfasi() -> None:
                         st.rerun()
             else:
                 st.warning("❌ Barkod stokta bulunamadı.")
+        
         st.markdown("---")
         st.write("📋 Manuel Sayım:")
         if st.session_state.stok:
@@ -705,6 +823,28 @@ def stok_sayfasi() -> None:
                             st.rerun()
         else:
             st.info("Ürün yok.")
+    with tab5:
+        st.subheader("📥 Toplu Stok Güncelleme (CSV)")
+        st.markdown("**Format:** `barkod,miktar` (başlık satırı olmadan)")
+        csv_dosya = st.file_uploader("CSV yükle", type=["csv"], key="toplu_csv")
+        if csv_dosya:
+            try:
+                df_csv = pd.read_csv(csv_dosya, header=None, names=["barkod", "miktar"])
+                for _, row in df_csv.iterrows():
+                    barkod = str(row["barkod"]).strip()
+                    miktar = float(row["miktar"])
+                    for u in st.session_state.stok:
+                        if u.get("barkod") == barkod:
+                            u["miktar"] += miktar
+                            hareket_ekle(st.session_state.current_user["kullanici_adi"],
+                                         "Toplu Güncelleme", u["urun_adi"],
+                                         f"{miktar:+.2f} {u['birim']}")
+                            break
+                veriyi_kaydet()
+                st.session_state.son_islem_mesaji = f"✅ {len(df_csv)} ürün güncellendi"
+                st.rerun()
+            except Exception as e:
+                st.error(f"CSV işlenirken hata: {e}")
 
 # ---------------------------- DİĞER SAYFALAR (ÖZET) -------------------
 def barkod_sayfasi() -> None:
