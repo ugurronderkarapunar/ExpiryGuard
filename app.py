@@ -745,31 +745,54 @@ def stok_sayfasi():
 
 def tedarikci_sayfasi():
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
-    tab1,tab2 = st.tabs(["📋 Liste","➕ Ekle/Düzenle"])
+    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle/Düzenle"])
     with tab1:
-        for i,t in enumerate(st.session_state.tedarikciler):
-            col1,col2,col3 = st.columns([4,1,1])
-            col1.write(f"**{t['ad']}** – Güven: {t.get('guven_puani',0)} – Tel: {t.get('tel','')} – E-posta: {t.get('eposta','')}")
-            if col2.button("✏️",key=f"duzenle_{i}"): st.session_state.duzenlenecek_tedarikci = i; st.rerun()
-            if col3.button("🗑️",key=f"sil_{i}"): st.session_state.tedarikciler.pop(i); dosya_yaz(TEDARIKCI_DOSYASI,st.session_state.tedarikciler); st.rerun()
+        if st.session_state.tedarikciler:
+            for i, t in enumerate(st.session_state.tedarikciler):
+                col1, col2, col3 = st.columns([4, 1, 1])
+                col1.write(f"**{t['ad']}** – Güven: {t.get('guven_puani', 0)} – Tel: {t.get('tel', '')} – E-posta: {t.get('eposta', '')}")
+                if col2.button("✏️", key=f"duzenle_{i}"):
+                    st.session_state.duzenlenecek_tedarikci = i
+                    st.rerun()
+                if col3.button("🗑️", key=f"sil_{i}"):
+                    st.session_state.tedarikciler.pop(i)
+                    dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
+                    st.session_state.son_islem_mesaji = "Tedarikçi silindi"
+                    st.rerun()
+        else:
+            st.info("Henüz tedarikçi eklenmemiş.")
     with tab2:
         duzenle = st.session_state.get("duzenlenecek_tedarikci")
-        t = st.session_state.tedarikciler[duzenle] if duzenle is not None else {"ad":"","guven_puani":5,"tel":"","eposta":""}
+        t = st.session_state.tedarikciler[duzenle] if duzenle is not None else {"ad": "", "guven_puani": 5, "tel": "", "eposta": ""}
         with st.form("tedarikci_form"):
             ad = st.text_input("Firma Adı", t["ad"])
-            guven = st.slider("Güven Puanı",0.0,10.0,t["guven_puani"])
+            guven = st.slider("Güven Puanı", 0.0, 10.0, t["guven_puani"])
             tel = st.text_input("Telefon (10 hane)", t["tel"])
             eposta = st.text_input("E-posta", t["eposta"])
             if st.form_submit_button("Kaydet"):
-                hata=False
-                if not ad.strip(): st.error("Ad zorunlu"); hata=True
-                if tel and not (tel.isdigit() and len(tel)==10): st.error("Telefon 10 haneli rakam"); hata=True
-                if eposta and not re.match(r"^[^@]+@[^@]+\.[^@]+$", eposta): st.error("Geçersiz e-posta"); hata=True
+                hata = False
+                if not ad.strip():
+                    st.error("Ad zorunlu")
+                    hata = True
+                if tel and not (tel.isdigit() and len(tel) == 10):
+                    st.error("Telefon 10 haneli rakam")
+                    hata = True
+                if eposta and not re.match(r"^[^@]+@[^@]+\.[^@]+$", eposta):
+                    st.error("Geçersiz e-posta")
+                    hata = True
                 if not hata:
-                    yeni = {"ad":ad.strip(),"guven_puani":guven,"tel":tel,"eposta":eposta}
-                    if duzenle is not None: st.session_state.tedarikciler[duzenle]=yeni; del st.session_state.duzenlenecek_tedarikci
-                    else: st.session_state.tedarikciler.append(yeni)
-                    dosya_yaz(TEDARIKCI_DOSYASI,st.session_state.tedarikciler); st.rerun()
+                    yeni = {"ad": ad.strip(), "guven_puani": guven, "tel": tel, "eposta": eposta}
+                    if duzenle is not None:
+                        st.session_state.tedarikciler[duzenle] = yeni
+                        del st.session_state.duzenlenecek_tedarikci
+                    else:
+                        if any(tm["ad"] == ad.strip() for tm in st.session_state.tedarikciler):
+                            st.error("Bu firma adı zaten mevcut")
+                        else:
+                            st.session_state.tedarikciler.append(yeni)
+                    dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
+                    st.session_state.son_islem_mesaji = f"✅ Tedarikçi {'güncellendi' if duzenle is not None else 'eklendi'}"
+                    st.rerun()
 
 def siparis_sayfasi():
     st.markdown('<div class="main-header">🔥 Sipariş Panosu</div>', unsafe_allow_html=True)
@@ -835,38 +858,48 @@ def satis_raporu():
     df["tarih"] = pd.to_datetime(df["tarih"])
     df["gun"] = df["tarih"].dt.date
     df["ay"] = df["tarih"].dt.strftime("%Y-%m")
-    c1,c2,c3 = st.columns(3)
-    with c1: aralik = st.date_input("Tarih Aralığı", (df["gun"].min(), df["gun"].max()))
-    with c2: tip = st.radio("Kırılım",["Günlük","Aylık","Ürün Bazlı","Kâr Marjı"], horizontal=True)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        aralik = st.date_input("Tarih Aralığı", (df["gun"].min(), df["gun"].max()))
+    with c2:
+        tip = st.radio("Kırılım", ["Günlük", "Aylık", "Ürün Bazlı", "Kâr Marjı"], horizontal=True)
     with c3:
-        if st.button("📥 Excel İndir"):
+        if st.button("📥 Excel İndir", key="excel_indir_btn"):
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name="Satislar")
-            st.download_button("Excel Dosyası", output.getvalue(), "satis_raporu.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    if len(aralik)==2: df = df[(df["gun"]>=aralik[0]) & (df["gun"]<=aralik[1])]
-    if tip=="Günlük":
+                if len(aralik) == 2:
+                    df_filtered = df[(df["gun"] >= aralik[0]) & (df["gun"] <= aralik[1])]
+                else:
+                    df_filtered = df
+                df_filtered.to_excel(writer, index=False, sheet_name="Satislar")
+            st.download_button("📥 Excel Dosyasını İndir", output.getvalue(), "satis_raporu.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="excel_download_btn")
+    if len(aralik) == 2:
+        df = df[(df["gun"] >= aralik[0]) & (df["gun"] <= aralik[1])]
+    if tip == "Günlük":
         rpr = df.groupby("gun")["toplam_tutar"].sum().reset_index()
-        rpr.columns=["Tarih","Toplam Satış (₺)"]
-        st.dataframe(rpr); fig = px.bar(rpr,x="Tarih",y="Toplam Satış (₺)")
-        st.plotly_chart(fig)
-    elif tip=="Aylık":
-        rpr = df.groupby("ay")["toplam_tutar"].sum().reset_index()
-        rpr.columns=["Ay","Toplam Satış (₺)"]
-        st.dataframe(rpr); fig = px.line(rpr,x="Ay",y="Toplam Satış (₺)",markers=True)
-        st.plotly_chart(fig)
-    elif tip=="Ürün Bazlı":
-        rpr = df.groupby("urun_adi").agg(Adet=("miktar","sum"),Ciro=("toplam_tutar","sum")).reset_index()
+        rpr.columns = ["Tarih", "Toplam Satış (₺)"]
         st.dataframe(rpr)
-        col1,col2 = st.columns(2)
-        fig1 = px.pie(rpr,values="Ciro",names="urun_adi",title="Ciro",hole=0.3)
+        fig = px.bar(rpr, x="Tarih", y="Toplam Satış (₺)")
+        st.plotly_chart(fig)
+    elif tip == "Aylık":
+        rpr = df.groupby("ay")["toplam_tutar"].sum().reset_index()
+        rpr.columns = ["Ay", "Toplam Satış (₺)"]
+        st.dataframe(rpr)
+        fig = px.line(rpr, x="Ay", y="Toplam Satış (₺)", markers=True)
+        st.plotly_chart(fig)
+    elif tip == "Ürün Bazlı":
+        rpr = df.groupby("urun_adi").agg(Adet=("miktar", "sum"), Ciro=("toplam_tutar", "sum")).reset_index()
+        st.dataframe(rpr)
+        col1, col2 = st.columns(2)
+        fig1 = px.pie(rpr, values="Ciro", names="urun_adi", title="Ciro", hole=0.3)
         col1.plotly_chart(fig1)
-        fig2 = px.bar(rpr,x="urun_adi",y="Adet",title="Satış Adedi")
+        fig2 = px.bar(rpr, x="urun_adi", y="Adet", title="Satış Adedi")
         col2.plotly_chart(fig2)
     else:
         df_kar = pd.DataFrame(st.session_state.stok)
-        df_kar["kar_marji"] = df_kar.apply(lambda r: ((r['satis_fiyat']-r['alis_fiyat'])/r['satis_fiyat']*100) if r['satis_fiyat']>0 else 0, axis=1)
-        st.dataframe(df_kar[["urun_adi","satis_fiyat","alis_fiyat","kar_marji"]].style.format({"kar_marji":"{:.1f}%"}))
+        df_kar["kar_marji"] = df_kar.apply(lambda r: ((r['satis_fiyat'] - r['alis_fiyat']) / r['satis_fiyat'] * 100) if r['satis_fiyat'] > 0 else 0, axis=1)
+        st.dataframe(df_kar[["urun_adi", "satis_fiyat", "alis_fiyat", "kar_marji"]].style.format({"kar_marji": "{:.1f}%"}))
 
 def aktivite_logu():
     st.markdown('<div class="main-header">📋 Aktivite Logu</div>', unsafe_allow_html=True)
@@ -901,28 +934,27 @@ def kasa_kapanisi():
         pdf.add_page()
         font_path = get_font_path()
         if font_path:
-            pdf.add_font("DejaVu","",font_path,uni=True)
-            pdf.set_font("DejaVu",size=12)
+            pdf.add_font("DejaVu", "", font_path, uni=True)
+            pdf.set_font("DejaVu", size=12)
         else:
-            pdf.set_font("Helvetica",size=12)
-        pdf.cell(200,10,txt=f"Kasa Kapanışı - {bugun}",ln=True,align='C')
+            pdf.set_font("Helvetica", size=12)
+        pdf.cell(200, 10, txt=f"Kasa Kapanışı - {bugun}", ln=True, align='C')
         pdf.ln(10)
-        pdf.set_font("DejaVu" if font_path else "Helvetica",size=10)
-        # Başlıklar
-        pdf.cell(50,8,txt="Ürün",border=1)
-        pdf.cell(30,8,txt="Miktar",border=1)
-        pdf.cell(30,8,txt="Birim Fiyat",border=1)
-        pdf.cell(30,8,txt="Tutar",border=1)
+        pdf.set_font("DejaVu" if font_path else "Helvetica", size=10)
+        pdf.cell(50, 8, txt="Ürün", border=1)
+        pdf.cell(30, 8, txt="Miktar", border=1)
+        pdf.cell(30, 8, txt="Birim Fiyat", border=1)
+        pdf.cell(30, 8, txt="Tutar", border=1)
         pdf.ln()
-        for _,row in df.iterrows():
-            pdf.cell(50,8,txt=row["urun_adi"][:20],border=1)
-            pdf.cell(30,8,txt=str(row["miktar"]),border=1)
-            pdf.cell(30,8,txt=f"{row['birim_fiyat']:.2f} ₺",border=1)
-            pdf.cell(30,8,txt=f"{row['toplam_tutar']:.2f} ₺",border=1)
+        for _, row in df.iterrows():
+            pdf.cell(50, 8, txt=row["urun_adi"][:20], border=1)
+            pdf.cell(30, 8, txt=str(row["miktar"]), border=1)
+            pdf.cell(30, 8, txt=f"{row['birim_fiyat']:.2f} ₺", border=1)
+            pdf.cell(30, 8, txt=f"{row['toplam_tutar']:.2f} ₺", border=1)
             pdf.ln()
         pdf.ln(5)
-        pdf.set_font("DejaVu" if font_path else "Helvetica",size=12)
-        pdf.cell(200,10,txt=f"TOPLAM: {toplam:.2f} ₺",ln=True)
+        pdf.set_font("DejaVu" if font_path else "Helvetica", size=12)
+        pdf.cell(200, 10, txt=f"TOPLAM: {toplam:.2f} ₺", ln=True)
         try:
             pdf_bytes = pdf.output(dest='S').encode('latin-1')
         except:
