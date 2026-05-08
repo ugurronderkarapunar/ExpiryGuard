@@ -50,7 +50,7 @@ CONFIG_DOSYASI = "config.json"
 VARSAYILAN_CONFIG = {
     "kullanici_adi": "admin",
     "sifre": "1234",
-    "oturum_suresi_dk": 45,                     # 45 dakika yapıldı
+    "oturum_suresi_dk": 45,
     "skt_uyari_gun": 3,
     "kategoriler": ["Kuru Gıda","Süt Ürünleri","İçecek","Temizlik","Diğer","Et & Şarküteri","Dondurulmuş","Fırın"],
     "birimler": ["kg","litre","adet","paket","gram","koli","kutu","şişe","çuval"],
@@ -62,7 +62,6 @@ VARSAYILAN_CONFIG = {
 }
 
 def deep_merge(default, override):
-    """İç içe sözlükleri birleştirir (override önceliklidir)."""
     result = default.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -92,7 +91,7 @@ SATIS_DOSYASI      = config["dosya_yollari"]["satislar"]
 KATEGORILER        = config.get("kategoriler")
 BIRIMLER           = config.get("birimler")
 ROLLER             = config.get("roller")
-OTURUM_SURESI      = config.get("oturum_suresi_dk", 45)   # 45 dakika
+OTURUM_SURESI      = config.get("oturum_suresi_dk", 45)
 SKT_UYARI_GUN      = config.get("skt_uyari_gun", 3)
 
 # ---------- YARDIMCI FONKSİYONLAR ----------
@@ -165,7 +164,7 @@ def dosya_yaz(dosya_adi, veri):
         logging.error(f"Dosya yazma hatası {dosya_adi}: {e}")
         return False
 
-# ---------- FONT YOLU ----------
+# ---------- FONT ----------
 def get_font_path():
     possible = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "DejaVuSans.ttf"),
@@ -478,12 +477,24 @@ def otomatik_yedekleme_kontrol():
 def oturumu_baslat():
     st.session_state.setdefault("stok", dosya_oku(STOK_DOSYASI, mock_stok_olustur()))
     st.session_state.setdefault("fire", dosya_oku(FIRE_DOSYASI, mock_fire_olustur()))
+    # barkod_db her zaman dict olmalı
     if "barkod_db" not in st.session_state:
         db = dosya_oku(BARKOD_DB_DOSYASI, None)
         if db is None:
             db = mock_barkod_db_olustur()
             dosya_yaz(BARKOD_DB_DOSYASI, db)
+        # Eğer liste gelmişse dict'e çevir (hata önleme)
+        if isinstance(db, list):
+            logging.warning("barkod_db liste olarak gelmiş, dict'e dönüştürülüyor")
+            db = {str(i): {"urun_adi": item, "birim": "adet", "kategori": "Diğer"} for i, item in enumerate(db)}
         st.session_state.barkod_db = db
+    else:
+        # Mevcut state'te liste olabilir, düzelt
+        if isinstance(st.session_state.barkod_db, list):
+            logging.warning("barkod_db state içinde liste, dict'e çevriliyor")
+            st.session_state.barkod_db = {str(i): {"urun_adi": item, "birim": "adet", "kategori": "Diğer"} for i, item in enumerate(st.session_state.barkod_db)}
+            dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+    
     st.session_state.setdefault("tedarikciler", dosya_oku(TEDARIKCI_DOSYASI, []))
     st.session_state.setdefault("kullanicilar", dosya_oku(
         KULLANICI_DOSYASI,
@@ -559,9 +570,39 @@ def izinli_sayfalar(kullanici):
             if any(k in yetki_sayfa.get(yetki,[]) for yetki in izinler)}
 
 # ============================================================
+# SAYFA ÖZETLERİ (Ana Panel için)
+# ============================================================
+def sayfa_ozetleri():
+    st.markdown("### 📋 Modül Özetleri")
+    ozetler = {
+        "📱 Barkod": "Barkod okutarak ürün giriş/çıkış yapma, yeni barkod tanımlama.",
+        "🏷️ Barkod Yönetimi": "Tüm barkodları listeleme, düzenleme, silme.",
+        "💵 Satış": "POS sistemi, ürün satışı, fiş oluşturma, stoktan düşme.",
+        "📦 Stok": "Stok listesi, ürün ekleme/düzenleme/silme, stok sayımı, toplu güncelleme.",
+        "🔥 Sipariş": "Kritik stokların sipariş takibi, tedarikçiye e-posta gönderme.",
+        "🏭 Tedarikçi": "Tedarikçi ekleme/düzenleme/silme, güven puanı, iletişim bilgileri.",
+        "📈 Stok Analizi": "Kâr marjları, stok devir hızı analizi.",
+        "📉 Fire Analizi": "Kategori bazında fire (sipariş) dağılımı (grafik).",
+        "📊 Satış Raporu": "Tarih aralığına göre satış raporu, Excel/PDF çıktısı.",
+        "📋 Aktivite Logu": "Tüm kullanıcı işlemlerinin zaman damgalı kaydı.",
+        "🧾 Kasa Kapanışı": "Günlük satış özeti, ödeme tiplerine göre dağılım, PDF rapor.",
+        "👥 Kullanıcı Yönetimi": "Yeni kullanıcı ekleme, rol atama (patron/kasiyer/depocu).",
+        "🔑 Şifre Sıfırlama": "Admin şifresini değiştirme.",
+        "💬 Geri Bildirim": "Uygulama hakkında geri bildirim gönderme (log kaydı).",
+        "⚙️ Ayarlar": "Patron e-posta ve telefon ayarları, test e-posta/WhatsApp.",
+        "💾 Yedekleme": "Tüm verilerin JSON yedeklenmesi ve geri yüklenmesi."
+    }
+    # Sadece kullanıcının izinli olduğu sayfaları göster
+    aktif = izinli_sayfalar(st.session_state.current_user)
+    for sayfa_adi in aktif.keys():
+        if sayfa_adi in ozetler:
+            st.info(f"**{sayfa_adi}**: {ozetler[sayfa_adi]}")
+        else:
+            st.info(f"**{sayfa_adi}**: Detaylı yönetim sayfası.")
+
+# ============================================================
 # SAYFALAR
 # ============================================================
-
 def ana_sayfa():
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
     kritik = [u for u in st.session_state.stok
@@ -591,6 +632,9 @@ def ana_sayfa():
     c5.metric("Bu Ay",         f"{bu_ay:,.0f} TL",    delta=f"{delta_ay:+,.0f} TL")
     buyume = 0 if gecen_hafta == 0 else (delta_hafta/gecen_hafta*100)
     c6.metric("Haftalık Büyüme", f"%{buyume:.1f}")
+    
+    # Sayfa özetleri bölümü
+    sayfa_ozetleri()
 
 
 def barkod_yonetimi():
@@ -774,8 +818,7 @@ def satis_sayfasi():
             veriyi_kaydet()
             pdf_bytes = fis_olustur(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam, odeme_tipi)
             st.download_button("🧾 Fişi İndir (PDF)", pdf_bytes, "fis.pdf", mime="application/pdf")
-            # Kalan stok bilgisini mesajda göster
-            kalan_stok = urun["miktar"]  # satış sonrası güncel miktar
+            kalan_stok = urun["miktar"]
             st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} TL - Kalan stok: {kalan_stok:.2f} {urun['birim']}"
             st.rerun()
 
@@ -839,6 +882,7 @@ def stok_sayfasi():
     with tab2:
         with st.form("manuel_ekle"):
             barkod   = st.text_input("Barkod")
+            # barkod_db artık dict, .get() çalışır
             bilgi    = st.session_state.barkod_db.get(barkod, {})
             ad       = st.text_input("Ürün Adı *", value=bilgi.get("urun_adi",""))
             miktar   = st.number_input("Miktar", 0.0, format="%.2f")
@@ -927,7 +971,7 @@ def stok_sayfasi():
 
 
 # ============================================================
-# TEDARİKÇİ YÖNETİMİ (DÜZELTİLMİŞ)
+# TEDARİKÇİ YÖNETİMİ
 # ============================================================
 def tedarikci_sayfasi():
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
