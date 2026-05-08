@@ -50,7 +50,7 @@ CONFIG_DOSYASI = "config.json"
 VARSAYILAN_CONFIG = {
     "kullanici_adi": "admin",
     "sifre": "1234",
-    "oturum_suresi_dk": 30,
+    "oturum_suresi_dk": 45,                     # 45 dakika yapıldı
     "skt_uyari_gun": 3,
     "kategoriler": ["Kuru Gıda","Süt Ürünleri","İçecek","Temizlik","Diğer","Et & Şarküteri","Dondurulmuş","Fırın"],
     "birimler": ["kg","litre","adet","paket","gram","koli","kutu","şişe","çuval"],
@@ -92,7 +92,7 @@ SATIS_DOSYASI      = config["dosya_yollari"]["satislar"]
 KATEGORILER        = config.get("kategoriler")
 BIRIMLER           = config.get("birimler")
 ROLLER             = config.get("roller")
-OTURUM_SURESI      = config.get("oturum_suresi_dk", 30)
+OTURUM_SURESI      = config.get("oturum_suresi_dk", 45)   # 45 dakika
 SKT_UYARI_GUN      = config.get("skt_uyari_gun", 3)
 
 # ---------- YARDIMCI FONKSİYONLAR ----------
@@ -476,7 +476,6 @@ def otomatik_yedekleme_kontrol():
 
 # ---------- OTURUM YÖNETİMİ ----------
 def oturumu_baslat():
-    # Tüm state'leri setdefault ile güvenli başlat
     st.session_state.setdefault("stok", dosya_oku(STOK_DOSYASI, mock_stok_olustur()))
     st.session_state.setdefault("fire", dosya_oku(FIRE_DOSYASI, mock_fire_olustur()))
     if "barkod_db" not in st.session_state:
@@ -775,7 +774,10 @@ def satis_sayfasi():
             veriyi_kaydet()
             pdf_bytes = fis_olustur(urun["urun_adi"], urun["birim"], miktar, fiyat, toplam, odeme_tipi)
             st.download_button("🧾 Fişi İndir (PDF)", pdf_bytes, "fis.pdf", mime="application/pdf")
-            st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} TL"; st.rerun()
+            # Kalan stok bilgisini mesajda göster
+            kalan_stok = urun["miktar"]  # satış sonrası güncel miktar
+            st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} TL - Kalan stok: {kalan_stok:.2f} {urun['birim']}"
+            st.rerun()
 
 
 def pos_modu():
