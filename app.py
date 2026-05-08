@@ -126,7 +126,7 @@ def dosya_yaz(dosya_adi, veri):
         return True
     except Exception as e: logging.error(f"Dosya yazma hatası {dosya_adi}: {e}"); return False
 
-# ---------- PDF FONT HATASI ÇÖZÜLDÜ ----------
+# ---------- PDF FONT HATASI ÇÖZÜLDÜ (dinamik font, bytes çıktı) ----------
 def get_font_path():
     possible = [
         os.path.join(os.path.dirname(__file__),"fonts","DejaVuSans.ttf"),
@@ -853,7 +853,9 @@ def fire_analizi():
 def satis_raporu():
     st.markdown('<div class="main-header">📊 Satış Raporu</div>', unsafe_allow_html=True)
     satislar = dosya_oku(SATIS_DOSYASI, [])
-    if not satislar: st.info("Satış yok"); return
+    if not satislar:
+        st.info("Satış yok")
+        return
     df = pd.DataFrame(satislar)
     df["tarih"] = pd.to_datetime(df["tarih"])
     df["gun"] = df["tarih"].dt.date
@@ -864,7 +866,7 @@ def satis_raporu():
     with c2:
         tip = st.radio("Kırılım", ["Günlük", "Aylık", "Ürün Bazlı", "Kâr Marjı"], horizontal=True)
     with c3:
-        if st.button("📥 Excel İndir", key="excel_indir_btn"):
+        if st.button("📥 Excel İndir"):
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 if len(aralik) == 2:
@@ -873,7 +875,7 @@ def satis_raporu():
                     df_filtered = df
                 df_filtered.to_excel(writer, index=False, sheet_name="Satislar")
             st.download_button("📥 Excel Dosyasını İndir", output.getvalue(), "satis_raporu.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="excel_download_btn")
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     if len(aralik) == 2:
         df = df[(df["gun"] >= aralik[0]) & (df["gun"] <= aralik[1])]
     if tip == "Günlük":
