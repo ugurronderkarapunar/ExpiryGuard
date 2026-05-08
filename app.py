@@ -600,8 +600,6 @@ def ana_sayfa():
     c5.metric("Bu Ay",         f"{bu_ay:,.0f} TL",    delta=f"{delta_ay:+,.0f} TL")
     buyume = 0 if gecen_hafta == 0 else (delta_hafta/gecen_hafta*100)
     c6.metric("Haftalık Büyüme", f"%{buyume:.1f}")
-    
-    # Sayfa özetleri KALDIRILDI (kullanıcı istemi üzerine)
 
 
 def barkod_yonetimi():
@@ -695,8 +693,10 @@ def barkod_sayfasi():
                             index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0)
             kategori = st.selectbox("Kategori", KATEGORILER,
                             index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            skt_var  = st.checkbox("Son kullanma tarihi var mı?")
-            skt      = st.date_input("SKT") if skt_var else None
+            skt_var = st.checkbox("Son kullanma tarihi var mı?")
+            skt = None
+            if skt_var:
+                skt = st.date_input("SKT")
             islem    = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
             submitted = st.form_submit_button("💾 Kaydet")
             if submitted:
@@ -860,8 +860,10 @@ def stok_sayfasi():
             alis     = st.number_input("Alış Fiyatı",  0.0, format="%.2f")
             satis    = st.number_input("Satış Fiyatı", 0.0, format="%.2f")
             min_m    = st.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
-            skt_var  = st.checkbox("SKT var")
-            skt      = st.date_input("SKT") if skt_var else None
+            skt_var = st.checkbox("SKT var")
+            skt = None
+            if skt_var:
+                skt = st.date_input("SKT")
             submitted = st.form_submit_button("Kaydet")
             if submitted:
                 if not ad.strip():
