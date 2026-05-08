@@ -165,7 +165,7 @@ def dosya_yaz(dosya_adi, veri):
         logging.error(f"Dosya yazma hatası {dosya_adi}: {e}")
         return False
 
-# ---------- FONT YOLU (dinamik, güvenli) ----------
+# ---------- FONT YOLU ----------
 def get_font_path():
     possible = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "DejaVuSans.ttf"),
@@ -182,7 +182,6 @@ def get_font_path():
     return None
 
 def _pdf_bytes(pdf: FPDF) -> bytes:
-    """FPDF sürümünden bağımsız bytes çıktısı."""
     try:
         return pdf.output(dest='S').encode('latin-1')
     except Exception:
@@ -191,7 +190,6 @@ def _pdf_bytes(pdf: FPDF) -> bytes:
         return buf.getvalue()
 
 def _pdf_setup(pdf: FPDF, boyut=10):
-    """Font ayarını merkezi yönet; font adını döndür."""
     font_path = get_font_path()
     if font_path:
         pdf.add_font("DejaVu", "", font_path, uni=True)
@@ -478,32 +476,30 @@ def otomatik_yedekleme_kontrol():
 
 # ---------- OTURUM YÖNETİMİ ----------
 def oturumu_baslat():
-    if "stok" not in st.session_state:
-        st.session_state.stok = dosya_oku(STOK_DOSYASI, mock_stok_olustur())
-    if "fire" not in st.session_state:
-        st.session_state.fire = dosya_oku(FIRE_DOSYASI, mock_fire_olustur())
+    # Tüm state'leri setdefault ile güvenli başlat
+    st.session_state.setdefault("stok", dosya_oku(STOK_DOSYASI, mock_stok_olustur()))
+    st.session_state.setdefault("fire", dosya_oku(FIRE_DOSYASI, mock_fire_olustur()))
     if "barkod_db" not in st.session_state:
         db = dosya_oku(BARKOD_DB_DOSYASI, None)
-        if db is None: db = mock_barkod_db_olustur(); dosya_yaz(BARKOD_DB_DOSYASI, db)
+        if db is None:
+            db = mock_barkod_db_olustur()
+            dosya_yaz(BARKOD_DB_DOSYASI, db)
         st.session_state.barkod_db = db
-    if "tedarikciler" not in st.session_state:
-        st.session_state.tedarikciler = dosya_oku(TEDARIKCI_DOSYASI, [])
-    if "kullanicilar" not in st.session_state:
-        st.session_state.kullanicilar = dosya_oku(
-            KULLANICI_DOSYASI,
-            [{"kullanici_adi":"admin","sifre":hashlib.sha256("1234".encode()).hexdigest(),"rol":"patron","ad":"Ahmet"}]
-        )
-    if "pos_sepet"          not in st.session_state: st.session_state.pos_sepet = {}
-    if "son_islem_mesaji"   not in st.session_state: st.session_state.son_islem_mesaji = ""
-    if "authenticated"      not in st.session_state: st.session_state.authenticated = False
-    if "current_user"       not in st.session_state: st.session_state.current_user = None
-    if "last_activity"      not in st.session_state: st.session_state.last_activity = datetime.now()
-    if "tema"               not in st.session_state: st.session_state.tema = "Koyu"
-    if "patron_email"       not in st.session_state: st.session_state.patron_email = ""
-    if "patron_telefon"     not in st.session_state: st.session_state.patron_telefon = ""
-    # Tedarikçi düzenleme state'i
-    if "duzenlenecek_tedarikci" not in st.session_state:
-        st.session_state.duzenlenecek_tedarikci = None
+    st.session_state.setdefault("tedarikciler", dosya_oku(TEDARIKCI_DOSYASI, []))
+    st.session_state.setdefault("kullanicilar", dosya_oku(
+        KULLANICI_DOSYASI,
+        [{"kullanici_adi":"admin","sifre":hashlib.sha256("1234".encode()).hexdigest(),"rol":"patron","ad":"Ahmet"}]
+    ))
+    st.session_state.setdefault("pos_sepet", {})
+    st.session_state.setdefault("son_islem_mesaji", "")
+    st.session_state.setdefault("authenticated", False)
+    st.session_state.setdefault("current_user", None)
+    st.session_state.setdefault("last_activity", datetime.now())
+    st.session_state.setdefault("tema", "Koyu")
+    st.session_state.setdefault("patron_email", "")
+    st.session_state.setdefault("patron_telefon", "")
+    st.session_state.setdefault("duzenlenecek_tedarikci", None)
+    st.session_state.setdefault("pos_modu", False)
     veri_gecis_kontrol()
     otomatik_yedekleme_kontrol()
 
@@ -528,7 +524,8 @@ def giris_ekrani():
         with st.form("giris"):
             kullanici = st.text_input("👤 Kullanıcı Adı")
             sifre     = st.text_input("🔒 Şifre", type="password")
-            if st.form_submit_button("🚀 Giriş Yap", use_container_width=True):
+            submitted = st.form_submit_button("🚀 Giriş Yap", use_container_width=True)
+            if submitted:
                 try:
                     admin_user = st.secrets["admin"]["kullanici_adi"]
                     admin_pass = st.secrets["admin"]["sifre"]
@@ -642,7 +639,8 @@ def barkod_yonetimi():
             yeni_ad     = st.text_input("Ürün Adı")
             yeni_birim  = st.selectbox("Birim", BIRIMLER)
             yeni_kat    = st.selectbox("Kategori", KATEGORILER)
-            if st.form_submit_button("Ekle"):
+            submitted = st.form_submit_button("Ekle")
+            if submitted:
                 if not yeni_barkod or not yeni_ad:
                     st.error("Barkod ve ürün adı zorunlu")
                 elif yeni_barkod in st.session_state.barkod_db:
@@ -690,7 +688,8 @@ def barkod_sayfasi():
             skt_var  = st.checkbox("Son kullanma tarihi var mı?", value=True)
             skt      = st.date_input("SKT") if skt_var else ""
             islem    = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
-            if st.form_submit_button("💾 Kaydet"):
+            submitted = st.form_submit_button("💾 Kaydet")
+            if submitted:
                 if not ad.strip():
                     st.error("Ad zorunlu")
                 else:
@@ -850,7 +849,8 @@ def stok_sayfasi():
             min_m    = st.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
             skt_var  = st.checkbox("SKT var")
             skt      = st.date_input("SKT") if skt_var else ""
-            if st.form_submit_button("Kaydet"):
+            submitted = st.form_submit_button("Kaydet")
+            if submitted:
                 if not ad.strip():
                     st.error("Ad zorunlu")
                 else:
@@ -880,7 +880,8 @@ def stok_sayfasi():
                 yeni_alis   = st.number_input("Alış Fiyatı",  value=float(urun.get("alis_fiyat",0)),  format="%.2f")
                 yeni_satis  = st.number_input("Satış Fiyatı", value=float(urun.get("satis_fiyat",0)), format="%.2f")
                 yeni_min    = st.number_input("Min Stok",     value=float(urun.get("min_miktar",0)),   format="%.2f")
-                if st.form_submit_button("Güncelle"):
+                submitted = st.form_submit_button("Güncelle")
+                if submitted:
                     urun.update({"urun_adi":yeni_ad,"miktar":yeni_miktar,"birim":yeni_birim,
                                  "kategori":yeni_kat,"alis_fiyat":yeni_alis,"satis_fiyat":yeni_satis,"min_miktar":yeni_min})
                     veriyi_kaydet()
@@ -924,7 +925,7 @@ def stok_sayfasi():
 
 
 # ============================================================
-# TEDARİKÇİ YÖNETİMİ — DÜZELTİLMİŞ VERSİYON
+# TEDARİKÇİ YÖNETİMİ (DÜZELTİLMİŞ)
 # ============================================================
 def tedarikci_sayfasi():
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
@@ -965,9 +966,9 @@ def tedarikci_sayfasi():
             guven = st.slider("Güven Puanı (0-10)", 0.0, 10.0, t["guven_puani"], 0.1)
             tel = st.text_input("Telefon (10 haneli, sadece rakam)", value=t["tel"])
             eposta = st.text_input("E-posta", value=t["eposta"])
-            
             btn_label = "💾 Güncelle" if duzenlenecek_idx is not None else "➕ Ekle"
-            if st.form_submit_button(btn_label, use_container_width=True):
+            submitted = st.form_submit_button(btn_label, use_container_width=True)
+            if submitted:
                 hata = False
                 if not ad.strip():
                     st.error("Firma adı zorunludur.")
@@ -982,7 +983,6 @@ def tedarikci_sayfasi():
                     if any(tm["ad"] == ad.strip() for tm in st.session_state.tedarikciler):
                         st.error("Bu firma adı zaten mevcut.")
                         hata = True
-                
                 if not hata:
                     yeni_t = {
                         "ad": ad.strip(),
@@ -1033,7 +1033,8 @@ def siparis_sayfasi():
                 urun_bilgi= next(u for u in st.session_state.stok if u["urun_adi"] == urun_sec)
                 miktar    = st.number_input("Miktar", 0.01, value=1.0)
                 st.write(f"Birim: {urun_bilgi['birim']}")
-                if st.form_submit_button("Ekle"):
+                submitted = st.form_submit_button("Ekle")
+                if submitted:
                     st.session_state.fire.append({
                         "urun_adi":urun_sec,"miktar":miktar,"birim":urun_bilgi['birim'],
                         "aciliyet":"⚡ Orta","tedarikci":urun_bilgi.get("tedarikci",""),
@@ -1183,7 +1184,8 @@ def kullanici_yonetimi():
         yeni_sifre = st.text_input("Şifre", type="password")
         rol        = st.selectbox("Rol", list(ROLLER.keys()))
         ad         = st.text_input("Ad Soyad")
-        if st.form_submit_button("Ekle"):
+        submitted = st.form_submit_button("Ekle")
+        if submitted:
             if yeni_kul and yeni_sifre:
                 st.session_state.kullanicilar.append({
                     "kullanici_adi":yeni_kul,
@@ -1201,7 +1203,8 @@ def sifre_sifirla():
         eski  = st.text_input("Eski Şifre",          type="password")
         yeni  = st.text_input("Yeni Şifre",          type="password")
         yeni2 = st.text_input("Yeni Şifre Tekrar",   type="password")
-        if st.form_submit_button("Sıfırla"):
+        submitted = st.form_submit_button("Sıfırla")
+        if submitted:
             admin_pass = config.get("sifre","1234")
             try: admin_pass = st.secrets["admin"]["sifre"]
             except: pass
@@ -1219,7 +1222,8 @@ def geri_bildirim():
     with st.form("geribildirim"):
         konu  = st.text_input("Konu")
         mesaj = st.text_area("Mesaj")
-        if st.form_submit_button("Gönder"):
+        submitted = st.form_submit_button("Gönder")
+        if submitted:
             logging.info(f"Geri Bildirim: {konu} - {mesaj}")
             st.session_state.son_islem_mesaji = "Teşekkürler!"; st.rerun()
 
