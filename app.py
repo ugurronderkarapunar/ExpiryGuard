@@ -30,7 +30,7 @@ def setup_logging():
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
     logger = logging.getLogger()
-    logger.setLevel(logging.WARNING)  # DEBUG mesajlarını engelle
+    logger.setLevel(logging.WARNING)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     for lvl, fname in [(logging.ERROR, 'error.log'), (logging.WARNING, 'warning.log')]:
         handler = logging.FileHandler(os.path.join(log_dir, fname))
@@ -477,7 +477,6 @@ def otomatik_yedekleme_kontrol():
 def oturumu_baslat():
     st.session_state.setdefault("stok", dosya_oku(STOK_DOSYASI, mock_stok_olustur()))
     st.session_state.setdefault("fire", dosya_oku(FIRE_DOSYASI, mock_fire_olustur()))
-    # barkod_db her zaman dict olmalı
     if "barkod_db" not in st.session_state:
         db = dosya_oku(BARKOD_DB_DOSYASI, None)
         if db is None:
@@ -568,36 +567,6 @@ def izinli_sayfalar(kullanici):
             if any(k in yetki_sayfa.get(yetki,[]) for yetki in izinler)}
 
 # ============================================================
-# SAYFA ÖZETLERİ (Ana Panel için)
-# ============================================================
-def sayfa_ozetleri():
-    st.markdown("### 📋 Modül Özetleri")
-    ozetler = {
-        "📱 Barkod": "Barkod okutarak ürün giriş/çıkış yapma, yeni barkod tanımlama.",
-        "🏷️ Barkod Yönetimi": "Tüm barkodları listeleme, düzenleme, silme.",
-        "💵 Satış": "POS sistemi, ürün satışı, fiş oluşturma, stoktan düşme.",
-        "📦 Stok": "Stok listesi, ürün ekleme/düzenleme/silme, stok sayımı, toplu güncelleme.",
-        "🔥 Sipariş": "Kritik stokların sipariş takibi, tedarikçiye e-posta gönderme.",
-        "🏭 Tedarikçi": "Tedarikçi ekleme/düzenleme/silme, güven puanı, iletişim bilgileri.",
-        "📈 Stok Analizi": "Kâr marjları, stok devir hızı analizi.",
-        "📉 Fire Analizi": "Kategori bazında fire (sipariş) dağılımı (grafik).",
-        "📊 Satış Raporu": "Tarih aralığına göre satış raporu, Excel/PDF çıktısı.",
-        "📋 Aktivite Logu": "Tüm kullanıcı işlemlerinin zaman damgalı kaydı.",
-        "🧾 Kasa Kapanışı": "Günlük satış özeti, ödeme tiplerine göre dağılım, PDF rapor.",
-        "👥 Kullanıcı Yönetimi": "Yeni kullanıcı ekleme, rol atama (patron/kasiyer/depocu).",
-        "🔑 Şifre Sıfırlama": "Admin şifresini değiştirme.",
-        "💬 Geri Bildirim": "Uygulama hakkında geri bildirim gönderme (log kaydı).",
-        "⚙️ Ayarlar": "Patron e-posta ve telefon ayarları, test e-posta/WhatsApp.",
-        "💾 Yedekleme": "Tüm verilerin JSON yedeklenmesi ve geri yüklenmesi."
-    }
-    aktif = izinli_sayfalar(st.session_state.current_user)
-    for sayfa_adi in aktif.keys():
-        if sayfa_adi in ozetler:
-            st.info(f"**{sayfa_adi}**: {ozetler[sayfa_adi]}")
-        else:
-            st.info(f"**{sayfa_adi}**: Detaylı yönetim sayfası.")
-
-# ============================================================
 # SAYFALAR
 # ============================================================
 def ana_sayfa():
@@ -632,7 +601,7 @@ def ana_sayfa():
     buyume = 0 if gecen_hafta == 0 else (delta_hafta/gecen_hafta*100)
     c6.metric("Haftalık Büyüme", f"%{buyume:.1f}")
     
-    sayfa_ozetleri()
+    # Sayfa özetleri KALDIRILDI (kullanıcı istemi üzerine)
 
 
 def barkod_yonetimi():
@@ -1074,7 +1043,6 @@ def siparis_sayfasi():
             if not st.session_state.stok:
                 st.warning("Önce ürün ekleyin")
             else:
-                # Ürün seçildiğinde birimini otomatik al
                 urun_sec = st.selectbox("Ürün", [u["urun_adi"] for u in st.session_state.stok])
                 urun_bilgi = next(u for u in st.session_state.stok if u["urun_adi"] == urun_sec)
                 birim = urun_bilgi.get("birim", "adet")
