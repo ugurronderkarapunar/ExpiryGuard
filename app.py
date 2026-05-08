@@ -30,15 +30,15 @@ def setup_logging():
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.WARNING)  # DEBUG mesajlarını engelle
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    for lvl, fname in [(logging.ERROR, 'error.log'), (logging.WARNING, 'warning.log'), (logging.INFO, 'info.log')]:
+    for lvl, fname in [(logging.ERROR, 'error.log'), (logging.WARNING, 'warning.log')]:
         handler = logging.FileHandler(os.path.join(log_dir, fname))
         handler.setLevel(lvl)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG)
+    console.setLevel(logging.WARNING)
     console.setFormatter(formatter)
     logger.addHandler(console)
 
@@ -483,13 +483,11 @@ def oturumu_baslat():
         if db is None:
             db = mock_barkod_db_olustur()
             dosya_yaz(BARKOD_DB_DOSYASI, db)
-        # Eğer liste gelmişse dict'e çevir (hata önleme)
         if isinstance(db, list):
             logging.warning("barkod_db liste olarak gelmiş, dict'e dönüştürülüyor")
             db = {str(i): {"urun_adi": item, "birim": "adet", "kategori": "Diğer"} for i, item in enumerate(db)}
         st.session_state.barkod_db = db
     else:
-        # Mevcut state'te liste olabilir, düzelt
         if isinstance(st.session_state.barkod_db, list):
             logging.warning("barkod_db state içinde liste, dict'e çevriliyor")
             st.session_state.barkod_db = {str(i): {"urun_adi": item, "birim": "adet", "kategori": "Diğer"} for i, item in enumerate(st.session_state.barkod_db)}
@@ -592,7 +590,6 @@ def sayfa_ozetleri():
         "⚙️ Ayarlar": "Patron e-posta ve telefon ayarları, test e-posta/WhatsApp.",
         "💾 Yedekleme": "Tüm verilerin JSON yedeklenmesi ve geri yüklenmesi."
     }
-    # Sadece kullanıcının izinli olduğu sayfaları göster
     aktif = izinli_sayfalar(st.session_state.current_user)
     for sayfa_adi in aktif.keys():
         if sayfa_adi in ozetler:
@@ -609,7 +606,9 @@ def ana_sayfa():
               if u.get("min_miktar",0) > 0 and u["miktar"] <= u["min_miktar"]]
     if kritik:
         st.balloons()
-        st.error(f"🚨 {len(kritik)} ürün kritik stok seviyesinde!")
+        st.error("🚨 Kritik stok seviyesindeki ürünler:")
+        for u in kritik:
+            st.write(f"   • **{u['urun_adi']}** – Mevcut: {u['miktar']:.2f} {u['birim']} / Minimum: {u['min_miktar']} {u['birim']}")
 
     bugun    = datetime.now()
     bugunku  = gunluk_ciro(bugun.strftime("%Y-%m-%d"))
@@ -633,7 +632,6 @@ def ana_sayfa():
     buyume = 0 if gecen_hafta == 0 else (delta_hafta/gecen_hafta*100)
     c6.metric("Haftalık Büyüme", f"%{buyume:.1f}")
     
-    # Sayfa özetleri bölümü
     sayfa_ozetleri()
 
 
@@ -728,8 +726,8 @@ def barkod_sayfasi():
                             index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0)
             kategori = st.selectbox("Kategori", KATEGORILER,
                             index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            skt_var  = st.checkbox("Son kullanma tarihi var mı?", value=True)
-            skt      = st.date_input("SKT") if skt_var else ""
+            skt_var  = st.checkbox("Son kullanma tarihi var mı?")
+            skt      = st.date_input("SKT") if skt_var else None
             islem    = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
             submitted = st.form_submit_button("💾 Kaydet")
             if submitted:
@@ -740,17 +738,18 @@ def barkod_sayfasi():
                         st.session_state.barkod_db[aktif] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
                         dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
                     gercek  = miktar if islem == "📥 Giriş" else -miktar
-                    skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
+                    skt_str = skt.strftime("%Y-%m-%d") if skt_var and skt else ""
                     for u in st.session_state.stok:
                         if u.get("barkod") == aktif:
                             u["miktar"] += gercek
-                            if skt_var: u["son_kullanma_tarihi"] = skt_str
+                            if skt_var and skt: u["son_kullanma_tarihi"] = skt_str
                             veriyi_kaydet()
                             st.session_state.son_islem_mesaji = f"✅ {ad.strip()} güncellendi"; st.rerun()
                     st.session_state.stok.append({
                         "urun_adi":ad.strip(),"miktar":max(0,gercek),"birim":birim,"kategori":kategori,
-                        "son_kullanma_tarihi":skt_str,"barkod":aktif,"min_miktar":0,
-                        "alis_fiyat":0,"satis_fiyat":0})
+                        "son_kullanma_tarihi":skt_str if skt_var and skt else "",
+                        "barkod":aktif,"min_miktar":0,
+                        "alis_fiyat":0,"satis_fiyat":0,"tedarikci":"","raf_no":"","kdv_oran":8,"tahmini_gunluk_satis":1.0})
                     veriyi_kaydet()
                     st.session_state.son_islem_mesaji = f"✅ {ad.strip()} eklendi"; st.rerun()
 
@@ -780,7 +779,7 @@ def satis_sayfasi():
                                      st.session_state.current_user["kullanici_adi"],
                                      urun.get("alis_fiyat",0), "Nakit")
                         veriyi_kaydet()
-                        st.session_state.son_islem_mesaji = f"✅ Hızlı satış: {urun['urun_adi']}"; st.rerun()
+                        st.session_state.son_islem_mesaji = f"✅ Hızlı satış: {urun['urun_adi']} - Kalan stok: {urun['miktar']:.2f} {urun['birim']}"; st.rerun()
 
     secili_str = st.selectbox(
         "Ürün Seçin",
@@ -882,7 +881,6 @@ def stok_sayfasi():
     with tab2:
         with st.form("manuel_ekle"):
             barkod   = st.text_input("Barkod")
-            # barkod_db artık dict, .get() çalışır
             bilgi    = st.session_state.barkod_db.get(barkod, {})
             ad       = st.text_input("Ürün Adı *", value=bilgi.get("urun_adi",""))
             miktar   = st.number_input("Miktar", 0.0, format="%.2f")
@@ -894,7 +892,7 @@ def stok_sayfasi():
             satis    = st.number_input("Satış Fiyatı", 0.0, format="%.2f")
             min_m    = st.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
             skt_var  = st.checkbox("SKT var")
-            skt      = st.date_input("SKT") if skt_var else ""
+            skt      = st.date_input("SKT") if skt_var else None
             submitted = st.form_submit_button("Kaydet")
             if submitted:
                 if not ad.strip():
@@ -906,8 +904,9 @@ def stok_sayfasi():
                     st.session_state.stok.append({
                         "urun_adi":ad.strip(),"miktar":miktar,"birim":birim,"kategori":kategori,
                         "min_miktar":min_m,"barkod":barkod,
-                        "son_kullanma_tarihi":skt.strftime("%Y-%m-%d") if skt_var else "",
-                        "alis_fiyat":alis,"satis_fiyat":satis,"raf_no":"","tahmini_gunluk_satis":1.0})
+                        "son_kullanma_tarihi":skt.strftime("%Y-%m-%d") if skt_var and skt else "",
+                        "alis_fiyat":alis,"satis_fiyat":satis,"raf_no":"","tahmini_gunluk_satis":1.0,
+                        "tedarikci":"","kdv_oran":8})
                     veriyi_kaydet()
                     st.session_state.son_islem_mesaji = f"🎉 {ad.strip()} eklendi!"; st.rerun()
     with tab3:
@@ -1075,18 +1074,20 @@ def siparis_sayfasi():
             if not st.session_state.stok:
                 st.warning("Önce ürün ekleyin")
             else:
-                urun_sec  = st.selectbox("Ürün", [u["urun_adi"] for u in st.session_state.stok])
-                urun_bilgi= next(u for u in st.session_state.stok if u["urun_adi"] == urun_sec)
-                miktar    = st.number_input("Miktar", 0.01, value=1.0)
-                st.write(f"Birim: {urun_bilgi['birim']}")
+                # Ürün seçildiğinde birimini otomatik al
+                urun_sec = st.selectbox("Ürün", [u["urun_adi"] for u in st.session_state.stok])
+                urun_bilgi = next(u for u in st.session_state.stok if u["urun_adi"] == urun_sec)
+                birim = urun_bilgi.get("birim", "adet")
+                miktar = st.number_input(f"Miktar ({birim})", 0.01, format="%.2f", value=1.0)
+                st.caption(f"Birim: {birim} (ürünün stok birimi otomatik alındı)")
                 submitted = st.form_submit_button("Ekle")
                 if submitted:
                     st.session_state.fire.append({
-                        "urun_adi":urun_sec,"miktar":miktar,"birim":urun_bilgi['birim'],
+                        "urun_adi":urun_sec,"miktar":miktar,"birim":birim,
                         "aciliyet":"⚡ Orta","tedarikci":urun_bilgi.get("tedarikci",""),
                         "durum":"Bekliyor","eklenme_tarihi":datetime.now().strftime("%Y-%m-%d %H:%M")})
                     veriyi_kaydet()
-                    st.session_state.son_islem_mesaji = "🔥 Sipariş eklendi"; st.rerun()
+                    st.session_state.son_islem_mesaji = f"🔥 Sipariş eklendi: {miktar} {birim} {urun_sec}"; st.rerun()
 
 
 def stok_analizi():
