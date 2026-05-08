@@ -917,37 +917,81 @@ def stok_sayfasi():
 # ============================================================
 def tedarikci_sayfasi():
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
-
-    # Session state başlangıcı
-    if "duzenlenecek_tedarikci" not in st.session_state:
-        st.session_state.duzenlenecek_tedarikci = None
-
-    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle / Düzenle"])
-
-    # ------ TAB 1: Liste ------
+    # Sekmeler: Liste ve Ekle/Düzenle
+    tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle/Düzenle"])
+    
+    # ---------- TAB 1: LİSTE ----------
     with tab1:
         if st.session_state.tedarikciler:
             for i, t in enumerate(st.session_state.tedarikciler):
-                col1, col2, col3 = st.columns([5, 1, 1])
-                col1.markdown(
-                    f"**{t['ad']}** &nbsp;|&nbsp; "
-                    f"⭐ {t.get('guven_puani',0)}/10 &nbsp;|&nbsp; "
-                    f"📞 {t.get('tel','—')} &nbsp;|&nbsp; "
-                    f"✉️ {t.get('eposta','—')}"
-                )
-                if col2.button("✏️", key=f"duzenle_btn_{i}", help="Düzenle"):
-                    st.session_state.duzenlenecek_tedarikci = i
-                    st.rerun()
-                if col3.button("🗑️", key=f"sil_btn_{i}", help="Sil"):
-                    ad_silinen = st.session_state.tedarikciler[i]['ad']
-                    st.session_state.tedarikciler.pop(i)
-                    dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
-                    st.session_state.son_islem_mesaji = f"🗑️ '{ad_silinen}' silindi"
-                    # Düzenleme indeksi artık geçersiz olabilir
-                    st.session_state.duzenlenecek_tedarikci = None
-                    st.rerun()
+                col1, col2, col3 = st.columns([4, 1, 1])
+                with col1:
+                    st.markdown(f"**{guvenli_html(t['ad'])}** – Güven: {t.get('guven_puani', 0):.1f} – Tel: {t.get('tel', '')} – E-posta: {t.get('eposta', '')}")
+                with col2:
+                    if st.button("✏️ Düzenle", key=f"duzenle_{i}"):
+                        st.session_state.duzenlenecek_tedarikci = i
+                        st.rerun()
+                with col3:
+                    if st.button("🗑️ Sil", key=f"sil_{i}"):
+                        st.session_state.tedarikciler.pop(i)
+                        dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
+                        st.session_state.son_islem_mesaji = "Tedarikçi silindi"
+                        st.rerun()
         else:
             st.info("Henüz tedarikçi eklenmemiş.")
+    
+    # ---------- TAB 2: EKLE / DÜZENLE ----------
+    with tab2:
+        duzenlenecek_idx = st.session_state.get("duzenlenecek_tedarikci", None)
+        if duzenlenecek_idx is not None:
+            t = st.session_state.tedarikciler[duzenlenecek_idx]
+            baslik = "Tedarikçi Düzenle"
+        else:
+            t = {"ad": "", "guven_puani": 5.0, "tel": "", "eposta": ""}
+            baslik = "Yeni Tedarikçi Ekle"
+        
+        st.subheader(baslik)
+        with st.form("tedarikci_form"):
+            ad = st.text_input("Firma Adı *", value=t["ad"])
+            guven = st.slider("Güven Puanı (0-10)", 0.0, 10.0, t["guven_puani"], 0.1)
+            tel = st.text_input("Telefon (10 haneli, sadece rakam)", value=t["tel"])
+            eposta = st.text_input("E-posta", value=t["eposta"])
+            
+            if st.form_submit_button("💾 Kaydet"):
+                hata = False
+                if not ad.strip():
+                    st.error("Firma adı zorunludur.")
+                    hata = True
+                if tel and not (tel.isdigit() and len(tel) == 10):
+                    st.error("Telefon 10 haneli rakamlardan oluşmalıdır (örn: 5551234567).")
+                    hata = True
+                if eposta and not re.match(r"^[^@]+@[^@]+\.[^@]+$", eposta):
+                    st.error("Geçerli bir e-posta adresi giriniz (ornek@domain.com).")
+                    hata = True
+                # Aynı isim kontrolü (sadece yeni eklemede)
+                if not hata and duzenlenecek_idx is None:
+                    if any(tm["ad"] == ad.strip() for tm in st.session_state.tedarikciler):
+                        st.error("Bu firma adı zaten mevcut.")
+                        hata = True
+                
+                if not hata:
+                    yeni_t = {
+                        "ad": ad.strip(),
+                        "guven_puani": guven,
+                        "tel": tel,
+                        "eposta": eposta
+                    }
+                    if duzenlenecek_idx is not None:
+                        # Düzenleme
+                        st.session_state.tedarikciler[duzenlenecek_idx] = yeni_t
+                        del st.session_state.duzenlenecek_tedarikci
+                        st.session_state.son_islem_mesaji = f"✅ Tedarikçi '{ad.strip()}' güncellendi."
+                    else:
+                        # Yeni ekleme
+                        st.session_state.tedarikciler.append(yeni_t)
+                        st.session_state.son_islem_mesaji = f"✅ Tedarikçi '{ad.strip()}' eklendi."
+                    dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
+                    st.rerun()
 
     # ------ TAB 2: Ekle / Düzenle ------
     with tab2:
