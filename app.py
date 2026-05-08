@@ -686,41 +686,44 @@ def barkod_sayfasi():
             st.info(f"📦 **{guvenli_html(urun_adi)}** ({bilgi.get('birim','')})")
         else:
             st.warning("❓ Yeni barkod.")
-        with st.form("barkod_form"):
-            ad       = st.text_input("Ürün Adı *", value=urun_adi)
-            miktar   = st.number_input("Miktar", 0.01, format="%.2f", value=1.0)
-            birim    = st.selectbox("Birim", BIRIMLER,
-                            index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0)
-            kategori = st.selectbox("Kategori", KATEGORILER,
-                            index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            skt_var = st.checkbox("Son kullanma tarihi var mı?")
-            skt = None
-            if skt_var:
-                skt = st.date_input("SKT")
-            islem    = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
-            submitted = st.form_submit_button("💾 Kaydet")
-            if submitted:
-                if not ad.strip():
-                    st.error("Ad zorunlu")
-                else:
-                    if aktif not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[aktif] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
-                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
-                    gercek  = miktar if islem == "📥 Giriş" else -miktar
-                    skt_str = skt.strftime("%Y-%m-%d") if skt_var and skt else ""
-                    for u in st.session_state.stok:
-                        if u.get("barkod") == aktif:
-                            u["miktar"] += gercek
-                            if skt_var and skt: u["son_kullanma_tarihi"] = skt_str
-                            veriyi_kaydet()
-                            st.session_state.son_islem_mesaji = f"✅ {ad.strip()} güncellendi"; st.rerun()
-                    st.session_state.stok.append({
-                        "urun_adi":ad.strip(),"miktar":max(0,gercek),"birim":birim,"kategori":kategori,
-                        "son_kullanma_tarihi":skt_str if skt_var and skt else "",
-                        "barkod":aktif,"min_miktar":0,
-                        "alis_fiyat":0,"satis_fiyat":0,"tedarikci":"","raf_no":"","kdv_oran":8,"tahmini_gunluk_satis":1.0})
-                    veriyi_kaydet()
-                    st.session_state.son_islem_mesaji = f"✅ {ad.strip()} eklendi"; st.rerun()
+        
+        # Form kullanmadan normal widget'lar
+        ad = st.text_input("Ürün Adı *", value=urun_adi, key="barkod_ad")
+        miktar = st.number_input("Miktar", 0.01, format="%.2f", value=1.0, key="barkod_miktar")
+        birim = st.selectbox("Birim", BIRIMLER,
+                        index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0,
+                        key="barkod_birim")
+        kategori = st.selectbox("Kategori", KATEGORILER,
+                        index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0,
+                        key="barkod_kategori")
+        skt_var = st.checkbox("Son kullanma tarihi var mı?", key="barkod_skt_var")
+        skt = None
+        if skt_var:
+            skt = st.date_input("SKT", key="barkod_skt")
+        islem = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True, key="barkod_islem")
+        
+        if st.button("💾 Kaydet", key="barkod_kaydet"):
+            if not ad.strip():
+                st.error("Ad zorunlu")
+            else:
+                if aktif not in st.session_state.barkod_db:
+                    st.session_state.barkod_db[aktif] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
+                    dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+                gercek  = miktar if islem == "📥 Giriş" else -miktar
+                skt_str = skt.strftime("%Y-%m-%d") if skt_var and skt else ""
+                for u in st.session_state.stok:
+                    if u.get("barkod") == aktif:
+                        u["miktar"] += gercek
+                        if skt_var and skt: u["son_kullanma_tarihi"] = skt_str
+                        veriyi_kaydet()
+                        st.session_state.son_islem_mesaji = f"✅ {ad.strip()} güncellendi"; st.rerun()
+                st.session_state.stok.append({
+                    "urun_adi":ad.strip(),"miktar":max(0,gercek),"birim":birim,"kategori":kategori,
+                    "son_kullanma_tarihi":skt_str if skt_var and skt else "",
+                    "barkod":aktif,"min_miktar":0,
+                    "alis_fiyat":0,"satis_fiyat":0,"tedarikci":"","raf_no":"","kdv_oran":8,"tahmini_gunluk_satis":1.0})
+                veriyi_kaydet()
+                st.session_state.son_islem_mesaji = f"✅ {ad.strip()} eklendi"; st.rerun()
 
 
 def satis_sayfasi():
@@ -848,38 +851,40 @@ def stok_sayfasi():
         if not df.empty: st.dataframe(df, use_container_width=True)
         else: st.info("Ürün yok.")
     with tab2:
-        with st.form("manuel_ekle"):
-            barkod   = st.text_input("Barkod")
-            bilgi    = st.session_state.barkod_db.get(barkod, {})
-            ad       = st.text_input("Ürün Adı *", value=bilgi.get("urun_adi",""))
-            miktar   = st.number_input("Miktar", 0.0, format="%.2f")
-            birim    = st.selectbox("Birim", BIRIMLER,
-                            index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0)
-            kategori = st.selectbox("Kategori", KATEGORILER,
-                            index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0)
-            alis     = st.number_input("Alış Fiyatı",  0.0, format="%.2f")
-            satis    = st.number_input("Satış Fiyatı", 0.0, format="%.2f")
-            min_m    = st.number_input("Min Stok", 0.0, format="%.2f", value=5.0)
-            skt_var = st.checkbox("SKT var")
-            skt = None
-            if skt_var:
-                skt = st.date_input("SKT")
-            submitted = st.form_submit_button("Kaydet")
-            if submitted:
-                if not ad.strip():
-                    st.error("Ad zorunlu")
-                else:
-                    if barkod and barkod not in st.session_state.barkod_db:
-                        st.session_state.barkod_db[barkod] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
-                        dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
-                    st.session_state.stok.append({
-                        "urun_adi":ad.strip(),"miktar":miktar,"birim":birim,"kategori":kategori,
-                        "min_miktar":min_m,"barkod":barkod,
-                        "son_kullanma_tarihi":skt.strftime("%Y-%m-%d") if skt_var and skt else "",
-                        "alis_fiyat":alis,"satis_fiyat":satis,"raf_no":"","tahmini_gunluk_satis":1.0,
-                        "tedarikci":"","kdv_oran":8})
-                    veriyi_kaydet()
-                    st.session_state.son_islem_mesaji = f"🎉 {ad.strip()} eklendi!"; st.rerun()
+        # Form kullanmadan normal widget'lar
+        barkod = st.text_input("Barkod", key="manuel_barkod")
+        bilgi = st.session_state.barkod_db.get(barkod, {})
+        ad = st.text_input("Ürün Adı *", value=bilgi.get("urun_adi",""), key="manuel_ad")
+        miktar = st.number_input("Miktar", 0.0, format="%.2f", key="manuel_miktar")
+        birim = st.selectbox("Birim", BIRIMLER,
+                        index=BIRIMLER.index(bilgi.get("birim","adet")) if bilgi.get("birim") in BIRIMLER else 0,
+                        key="manuel_birim")
+        kategori = st.selectbox("Kategori", KATEGORILER,
+                        index=KATEGORILER.index(bilgi.get("kategori","Diğer")) if bilgi.get("kategori") in KATEGORILER else 0,
+                        key="manuel_kategori")
+        alis = st.number_input("Alış Fiyatı", 0.0, format="%.2f", key="manuel_alis")
+        satis = st.number_input("Satış Fiyatı", 0.0, format="%.2f", key="manuel_satis")
+        min_m = st.number_input("Min Stok", 0.0, format="%.2f", value=5.0, key="manuel_min")
+        skt_var = st.checkbox("SKT var", key="manuel_skt_var")
+        skt = None
+        if skt_var:
+            skt = st.date_input("SKT", key="manuel_skt")
+        
+        if st.button("Kaydet", key="manuel_kaydet"):
+            if not ad.strip():
+                st.error("Ad zorunlu")
+            else:
+                if barkod and barkod not in st.session_state.barkod_db:
+                    st.session_state.barkod_db[barkod] = {"urun_adi":ad.strip(),"birim":birim,"kategori":kategori}
+                    dosya_yaz(BARKOD_DB_DOSYASI, st.session_state.barkod_db)
+                st.session_state.stok.append({
+                    "urun_adi":ad.strip(),"miktar":miktar,"birim":birim,"kategori":kategori,
+                    "min_miktar":min_m,"barkod":barkod,
+                    "son_kullanma_tarihi":skt.strftime("%Y-%m-%d") if skt_var and skt else "",
+                    "alis_fiyat":alis,"satis_fiyat":satis,"raf_no":"","tahmini_gunluk_satis":1.0,
+                    "tedarikci":"","kdv_oran":8})
+                veriyi_kaydet()
+                st.session_state.son_islem_mesaji = f"🎉 {ad.strip()} eklendi!"; st.rerun()
     with tab3:
         if st.session_state.stok:
             urunler = [f"{u['urun_adi']} ({u['miktar']:.2f} {u['birim']})" for u in st.session_state.stok]
