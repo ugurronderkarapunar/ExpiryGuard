@@ -61,13 +61,24 @@ VARSAYILAN_CONFIG = {
     }
 }
 
+def deep_merge(default, override):
+    """İç içe sözlükleri birleştirir (override önceliklidir)."""
+    result = default.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
 def load_config():
     if os.path.exists(CONFIG_DOSYASI):
         try:
-            with open(CONFIG_DOSYASI,"r",encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            pass
+            with open(CONFIG_DOSYASI, "r", encoding="utf-8") as f:
+                user_config = json.load(f)
+            return deep_merge(VARSAYILAN_CONFIG, user_config)
+        except Exception as e:
+            logging.error(f"Config yüklenemedi, varsayılan kullanılıyor: {e}")
     return VARSAYILAN_CONFIG
 
 config = load_config()
@@ -913,14 +924,12 @@ def stok_sayfasi():
 
 
 # ============================================================
-# TEDARİKÇİ YÖNETİMİ — DÜZELTİLDİ
+# TEDARİKÇİ YÖNETİMİ — DÜZELTİLMİŞ VERSİYON
 # ============================================================
 def tedarikci_sayfasi():
     st.markdown('<div class="main-header">🏭 Tedarikçi Yönetimi</div>', unsafe_allow_html=True)
-    # Sekmeler: Liste ve Ekle/Düzenle
     tab1, tab2 = st.tabs(["📋 Liste", "➕ Ekle/Düzenle"])
     
-    # ---------- TAB 1: LİSTE ----------
     with tab1:
         if st.session_state.tedarikciler:
             for i, t in enumerate(st.session_state.tedarikciler):
@@ -940,24 +949,25 @@ def tedarikci_sayfasi():
         else:
             st.info("Henüz tedarikçi eklenmemiş.")
     
-    # ---------- TAB 2: EKLE / DÜZENLE ----------
     with tab2:
         duzenlenecek_idx = st.session_state.get("duzenlenecek_tedarikci", None)
         if duzenlenecek_idx is not None:
             t = st.session_state.tedarikciler[duzenlenecek_idx]
-            baslik = "Tedarikçi Düzenle"
+            st.info(f"✏️ **{t['ad']}** düzenleniyor")
+            if st.button("❌ Düzenlemeyi İptal Et"):
+                st.session_state.duzenlenecek_tedarikci = None
+                st.rerun()
         else:
             t = {"ad": "", "guven_puani": 5.0, "tel": "", "eposta": ""}
-            baslik = "Yeni Tedarikçi Ekle"
         
-        st.subheader(baslik)
         with st.form("tedarikci_form"):
             ad = st.text_input("Firma Adı *", value=t["ad"])
             guven = st.slider("Güven Puanı (0-10)", 0.0, 10.0, t["guven_puani"], 0.1)
             tel = st.text_input("Telefon (10 haneli, sadece rakam)", value=t["tel"])
             eposta = st.text_input("E-posta", value=t["eposta"])
             
-            if st.form_submit_button("💾 Kaydet"):
+            btn_label = "💾 Güncelle" if duzenlenecek_idx is not None else "➕ Ekle"
+            if st.form_submit_button(btn_label, use_container_width=True):
                 hata = False
                 if not ad.strip():
                     st.error("Firma adı zorunludur.")
@@ -968,7 +978,6 @@ def tedarikci_sayfasi():
                 if eposta and not re.match(r"^[^@]+@[^@]+\.[^@]+$", eposta):
                     st.error("Geçerli bir e-posta adresi giriniz (ornek@domain.com).")
                     hata = True
-                # Aynı isim kontrolü (sadece yeni eklemede)
                 if not hata and duzenlenecek_idx is None:
                     if any(tm["ad"] == ad.strip() for tm in st.session_state.tedarikciler):
                         st.error("Bu firma adı zaten mevcut.")
@@ -982,63 +991,14 @@ def tedarikci_sayfasi():
                         "eposta": eposta
                     }
                     if duzenlenecek_idx is not None:
-                        # Düzenleme
                         st.session_state.tedarikciler[duzenlenecek_idx] = yeni_t
-                        del st.session_state.duzenlenecek_tedarikci
+                        st.session_state.duzenlenecek_tedarikci = None
                         st.session_state.son_islem_mesaji = f"✅ Tedarikçi '{ad.strip()}' güncellendi."
                     else:
-                        # Yeni ekleme
                         st.session_state.tedarikciler.append(yeni_t)
                         st.session_state.son_islem_mesaji = f"✅ Tedarikçi '{ad.strip()}' eklendi."
                     dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
                     st.rerun()
-
-    # ------ TAB 2: Ekle / Düzenle ------
-    with tab2:
-        duzenle_idx = st.session_state.duzenlenecek_tedarikci
-
-        if duzenle_idx is not None:
-            st.info(f"✏️ **{st.session_state.tedarikciler[duzenle_idx]['ad']}** düzenleniyor")
-            if st.button("❌ Düzenlemeyi İptal Et"):
-                st.session_state.duzenlenecek_tedarikci = None
-                st.rerun()
-
-        # Formu doldur: düzenleme modundaysa mevcut veriyle, değilse boş
-        t = (st.session_state.tedarikciler[duzenle_idx]
-             if duzenle_idx is not None
-             else {"ad":"","guven_puani":5.0,"tel":"","eposta":""})
-
-        with st.form("tedarikci_form", clear_on_submit=True):
-            ad     = st.text_input("Firma Adı *", value=t["ad"])
-            guven  = st.slider("Güven Puanı", 0.0, 10.0, float(t.get("guven_puani",5)))
-            tel    = st.text_input("Telefon (10 hane)", value=t.get("tel",""))
-            eposta = st.text_input("E-posta", value=t.get("eposta",""))
-
-            btn_label = "💾 Güncelle" if duzenle_idx is not None else "➕ Ekle"
-            if st.form_submit_button(btn_label, use_container_width=True):
-                hata = False
-                if not ad.strip():
-                    st.error("Firma adı zorunlu"); hata = True
-                if tel and not (tel.isdigit() and len(tel) == 10):
-                    st.error("Telefon 10 haneli rakam olmalı"); hata = True
-                if eposta and not re.match(r"^[^@]+@[^@]+\.[^@]+$", eposta):
-                    st.error("Geçersiz e-posta"); hata = True
-
-                if not hata:
-                    yeni = {"ad":ad.strip(),"guven_puani":guven,"tel":tel,"eposta":eposta}
-                    if duzenle_idx is not None:
-                        st.session_state.tedarikciler[duzenle_idx] = yeni
-                        st.session_state.duzenlenecek_tedarikci = None
-                        st.session_state.son_islem_mesaji = f"✅ '{ad.strip()}' güncellendi"
-                    else:
-                        if any(tm["ad"] == ad.strip() for tm in st.session_state.tedarikciler):
-                            st.error("Bu firma adı zaten mevcut"); hata = True
-                        else:
-                            st.session_state.tedarikciler.append(yeni)
-                            st.session_state.son_islem_mesaji = f"✅ '{ad.strip()}' eklendi"
-                    if not hata:
-                        dosya_yaz(TEDARIKCI_DOSYASI, st.session_state.tedarikciler)
-                        st.rerun()
 
 
 def siparis_sayfasi():
@@ -1178,9 +1138,6 @@ def aktivite_logu():
     st.dataframe(df[mask].sort_values("tarih", ascending=False), use_container_width=True)
 
 
-# ============================================================
-# KASA KAPANIS — DÜZELTİLDİ (dinamik font, TL)
-# ============================================================
 def kasa_kapanisi():
     st.markdown('<div class="main-header">🧾 Günlük Kasa Kapanışı</div>', unsafe_allow_html=True)
     bugun   = datetime.now().strftime("%Y-%m-%d")
@@ -1199,29 +1156,22 @@ def kasa_kapanisi():
     if st.button("📄 PDF İndir"):
         pdf = FPDF()
         pdf.add_page()
-        fn = _pdf_setup(pdf, 12)              # ← dinamik font, FileNotFoundError yok
-
+        fn = _pdf_setup(pdf, 12)
         pdf.cell(200, 10, txt=f"Kasa Kapanis - {bugun}", ln=True, align='C')
         pdf.ln(10)
         pdf.set_font(fn, size=10)
-
-        # Başlık satırı
         for baslik, genislik in [("Urun",50),("Miktar",30),("Birim Fiyat",30),("Tutar",30)]:
             pdf.cell(genislik, 8, txt=baslik, border=1)
         pdf.ln()
-
-        # Veri satırları
         for _, row in df.iterrows():
             pdf.cell(50, 8, txt=str(row["urun_adi"])[:20],         border=1)
             pdf.cell(30, 8, txt=str(row["miktar"]),                 border=1)
             pdf.cell(30, 8, txt=f"{row['birim_fiyat']:.2f} TL",    border=1)
             pdf.cell(30, 8, txt=f"{row['toplam_tutar']:.2f} TL",   border=1)
             pdf.ln()
-
         pdf.ln(5)
         pdf.set_font(fn, size=12)
         pdf.cell(200, 10, txt=f"TOPLAM: {toplam:.2f} TL", ln=True)
-
         pdf_bytes = _pdf_bytes(pdf)
         st.download_button("📥 PDF İndir", pdf_bytes, "kasa_kapanis.pdf", mime="application/pdf")
 
