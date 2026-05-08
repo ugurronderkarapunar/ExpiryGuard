@@ -126,7 +126,7 @@ def dosya_yaz(dosya_adi, veri):
         return True
     except Exception as e: logging.error(f"Dosya yazma hatası {dosya_adi}: {e}"); return False
 
-# ---------- PDF FONT HATASI ÇÖZÜLDÜ (dinamik font, asla diske yazma) ----------
+# ---------- PDF FONT HATASI ÇÖZÜLDÜ ----------
 def get_font_path():
     possible = [
         os.path.join(os.path.dirname(__file__),"fonts","DejaVuSans.ttf"),
@@ -167,13 +167,12 @@ def fis_olustur(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, odeme_tipi):
     pdf.cell(50,6,txt=f"Ödeme: {odeme_tipi}",border=0,ln=True)
     pdf.ln(5)
     pdf.cell(80,6,txt="İyi günlerde kullanın!",ln=True,align='C')
-    # PDF'i bytes olarak döndür (diske yazma yok)
     try:
         return pdf.output(dest='S').encode('latin-1')
     except:
-        buffer = BytesIO()
-        pdf.output(buffer)
-        return buffer.getvalue()
+        buf = BytesIO()
+        pdf.output(buf)
+        return buf.getvalue()
 
 # ---------- DİĞER TEMEL FONKSİYONLAR ----------
 def veri_gecis_kontrol():
@@ -627,7 +626,6 @@ def satis_sayfasi():
             st.session_state.son_islem_mesaji = f"✅ Satış: {toplam:.2f} ₺"
             st.rerun()
 
-# POS modu (kısaltılmış)
 def pos_modu():
     st.markdown('<div class="main-header">🛒 Hızlı Satış (POS Modu)</div>', unsafe_allow_html=True)
     if "pos_sepet" not in st.session_state: st.session_state.pos_sepet = {}
@@ -886,18 +884,52 @@ def kasa_kapanisi():
     st.markdown('<div class="main-header">🧾 Günlük Kasa Kapanışı</div>', unsafe_allow_html=True)
     bugun = datetime.now().strftime("%Y-%m-%d")
     satislar = [s for s in dosya_oku(SATIS_DOSYASI, []) if s["tarih"].startswith(bugun)]
-    if not satislar: st.info("Bugün satış yok"); return
+    if not satislar:
+        st.info("Bugün satış yok")
+        return
     df = pd.DataFrame(satislar)
     toplam = df["toplam_tutar"].sum()
     st.dataframe(df[["urun_adi","miktar","birim_fiyat","toplam_tutar"]], use_container_width=True)
     st.metric("Toplam Satış", f"{toplam:.2f} ₺")
     st.metric("Net Kâr", f"{gunluk_kar():.2f} ₺")
     if "odeme_tipi" in df.columns:
-        for kanal,tutar in df.groupby("odeme_tipi")["toplam_tutar"].sum().items():
+        odeme_ozet = df.groupby("odeme_tipi")["toplam_tutar"].sum()
+        for kanal, tutar in odeme_ozet.items():
             st.metric(f"💳 {kanal}", f"{tutar:,.2f} ₺")
-    if st.button("PDF İndir"):
-        pdf_bytes = fis_olustur("Kasa Kapanışı","",0,0,toplam,"")
-        st.download_button("PDF İndir", pdf_bytes, "kasa_kapanis.pdf", mime="application/pdf")
+    if st.button("📄 PDF İndir"):
+        pdf = FPDF()
+        pdf.add_page()
+        font_path = get_font_path()
+        if font_path:
+            pdf.add_font("DejaVu","",font_path,uni=True)
+            pdf.set_font("DejaVu",size=12)
+        else:
+            pdf.set_font("Helvetica",size=12)
+        pdf.cell(200,10,txt=f"Kasa Kapanışı - {bugun}",ln=True,align='C')
+        pdf.ln(10)
+        pdf.set_font("DejaVu" if font_path else "Helvetica",size=10)
+        # Başlıklar
+        pdf.cell(50,8,txt="Ürün",border=1)
+        pdf.cell(30,8,txt="Miktar",border=1)
+        pdf.cell(30,8,txt="Birim Fiyat",border=1)
+        pdf.cell(30,8,txt="Tutar",border=1)
+        pdf.ln()
+        for _,row in df.iterrows():
+            pdf.cell(50,8,txt=row["urun_adi"][:20],border=1)
+            pdf.cell(30,8,txt=str(row["miktar"]),border=1)
+            pdf.cell(30,8,txt=f"{row['birim_fiyat']:.2f} ₺",border=1)
+            pdf.cell(30,8,txt=f"{row['toplam_tutar']:.2f} ₺",border=1)
+            pdf.ln()
+        pdf.ln(5)
+        pdf.set_font("DejaVu" if font_path else "Helvetica",size=12)
+        pdf.cell(200,10,txt=f"TOPLAM: {toplam:.2f} ₺",ln=True)
+        try:
+            pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        except:
+            buf = BytesIO()
+            pdf.output(buf)
+            pdf_bytes = buf.getvalue()
+        st.download_button("📥 PDF İndir", pdf_bytes, "kasa_kapanis.pdf", mime="application/pdf")
 
 def kullanici_yonetimi():
     st.markdown('<div class="main-header">👥 Kullanıcı Yönetimi</div>', unsafe_allow_html=True)
@@ -943,9 +975,20 @@ def ayarlar_sayfasi():
         eposta = st.text_input("Patron E-posta", value=st.session_state.get("patron_email",""))
         telefon = st.text_input("Patron Telefon", value=st.session_state.get("patron_telefon",""))
         col1,col2,col3 = st.columns(3)
-        with col1: st.form_submit_button("Kaydet", on_click=lambda: (st.session_state.update({"patron_email":eposta,"patron_telefon":telefon}), st.session_state.__setitem__("son_islem_mesaji","Ayarlar kaydedildi")))
-        with col2: st.form_submit_button("Test E-posta", on_click=lambda: email_gonder(eposta,"Test","Test mesajı") if eposta else st.error("E-posta girin"))
-        with col3: st.form_submit_button("Test WhatsApp", on_click=lambda: whatsapp_gonder(f"+90{telefon}","Test") if telefon else st.error("Telefon girin"))
+        if col1.form_submit_button("Kaydet"):
+            st.session_state.patron_email = eposta
+            st.session_state.patron_telefon = telefon
+            st.session_state.son_islem_mesaji = "Ayarlar kaydedildi"; st.rerun()
+        if col2.form_submit_button("Test E-posta"):
+            if eposta:
+                email_gonder(eposta,"Test","Test mesajı")
+                st.success("Test e-postası gönderilmeye çalışıldı")
+            else: st.error("E-posta girin")
+        if col3.form_submit_button("Test WhatsApp"):
+            if telefon:
+                whatsapp_gonder(f"+90{telefon}","Test mesajı")
+                st.success("Test WhatsApp gönderilmeye çalışıldı")
+            else: st.error("Telefon girin")
 
 def yedekleme_sayfasi():
     st.markdown('<div class="main-header">💾 Yedekleme</div>', unsafe_allow_html=True)
