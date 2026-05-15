@@ -151,11 +151,10 @@ def init_db():
         rol TEXT,
         ad TEXT
     )''')
-    # Eksik sütunları ekle (eski DB için)
+    # Eksik sütunları ekle
     try:
         cur.execute("ALTER TABLE stok ADD COLUMN birim_orani REAL DEFAULT 1.0")
-    except:
-        pass
+    except: pass
     db.commit()
 
 def db_execute(query, params=()):
@@ -272,6 +271,10 @@ def enerjik_css(tema):
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             margin-bottom: 1.5rem; padding-bottom: 0.5rem;
             border-bottom: 2px solid #F97316;
+        }}
+        .indirim-box {{
+            background: #1a1f35; border: 2px solid #F97316;
+            border-radius: 15px; padding: 15px; margin: 10px 0;
         }}
         @media (max-width: 768px) {{
             .main-header {{ font-size: 1.4rem !important; }}
@@ -408,6 +411,79 @@ def gunluk_kar(tarih_str=None):
     satislar = db_fetchall("SELECT toplam_tutar, maliyet FROM satislar WHERE tarih LIKE ?", (tarih_str+'%',))
     return sum(s['toplam_tutar'] - s.get('maliyet',0) for s in satislar)
 
+# ---------- GÜNLÜK SATIŞ HIZI VE İNDİRİM HESAPLAMA ----------
+def urun_gunluk_satis_hizi(urun_adi):
+    """Son 30 gündeki ortalama günlük satış adedi (adet cinsinden)."""
+    bitis = datetime.now()
+    baslangic = bitis - timedelta(days=30)
+    rows = db_fetchall(
+        "SELECT miktar, birim FROM satislar WHERE urun_adi = ? AND tarih >= ? AND tarih <= ?",
+        (urun_adi, baslangic.strftime("%Y-%m-%d"), bitis.strftime("%Y-%m-%d %H:%M:%S"))
+    )
+    if not rows:
+        # Satış yoksa stoktaki tahmini günlük satışa bak
+        stok = db_fetchone("SELECT tahmini_gunluk_satis FROM stok WHERE urun_adi = ?", (urun_adi,))
+        return stok['tahmini_gunluk_satis'] if stok else 1.0
+    # Hepsi adet cinsinden mi? Değilse birim_orani ile çevirmek gerekir ama basit tuttum
+    return sum(r['miktar'] for r in rows) / len(rows) if len(rows) > 0 else 1.0
+
+def bilimsel_indirim_hesapla(urun):
+    """
+    urun: dict (stok satırı)
+    Return: (indirim_yuzdesi, indirimli_fiyat)
+    """
+    try:
+        skt_str = urun.get('son_kullanma_tarihi','')
+        if not skt_str:
+            return 0, urun['satis_fiyat']
+        skt = datetime.strptime(skt_str, "%Y-%m-%d")
+        kalan_gun = (skt - datetime.now()).days
+    except:
+        return 0, urun['satis_fiyat']
+
+    q = urun['miktar']  # stok miktarı (büyük birim cinsinden)
+    satis_fiyat = urun['satis_fiyat']  # adet başına
+    alis_fiyat  = urun['alis_fiyat']   # adet başına
+    birim_orani = urun.get('birim_orani', 1.0) or 1.0
+
+    if satis_fiyat <= 0 or q <= 0:
+        return 0, satis_fiyat
+
+    # Toplam adet stok
+    toplam_adet = q * birim_orani
+
+    # Kar marjı (adet başı)
+    if satis_fiyat > 0:
+        marj = (satis_fiyat - alis_fiyat) / satis_fiyat
+    else:
+        marj = 0
+
+    # Günlük satış hızı (adet/gün)
+    v = urun_gunluk_satis_hizi(urun['urun_adi'])
+
+    # Kalan günde beklenen satış (adet)
+    beklenen_satis = v * max(kalan_gun, 0)
+
+    # Stok fazlası (adet)
+    stok_fazlasi = toplam_adet - beklenen_satis
+    if stok_fazlasi <= 0:
+        return 0, satis_fiyat
+
+    # İndirim oranı hesapla
+    indirim = (stok_fazlasi / toplam_adet) * marj * 100
+    max_indirim = marj * 100 * 0.8
+    indirim = min(indirim, max_indirim)
+
+    if kalan_gun <= 1:
+        indirim = max(indirim, marj * 100 * 0.5)
+    elif kalan_gun <= 3:
+        indirim = max(indirim, marj * 100 * 0.2)
+
+    indirim = min(indirim, 50)  # en fazla %50
+    indirim = max(indirim, 0)
+
+    indirimli_fiyat = satis_fiyat * (1 - indirim/100)
+    return round(indirim,1), round(indirimli_fiyat, 2)
 # ---------- SAYFALAR ----------
 def ana_sayfa():
     st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
@@ -418,12 +494,14 @@ def ana_sayfa():
             skt = datetime.strptime(u['son_kullanma_tarihi'], "%Y-%m-%d")
             kalan = (skt - datetime.now()).days
             if 0 <= kalan <= SKT_UYARI_GUN:
-                yaklasan.append((u['urun_adi'], kalan))
+                indirim, ind_fiyat = bilimsel_indirim_hesapla(u)
+                yaklasan.append((u['urun_adi'], kalan, indirim, ind_fiyat))
         except: pass
     if yaklasan:
-        st.error("⏳ Son kullanma tarihi yaklaşan ürünler:")
-        for ad, gun in yaklasan:
-            st.write(f"• **{ad}** – {gun} gün kaldı")
+        st.error("⏳ Son kullanma tarihi yaklaşan ürünler (önerilen indirim):")
+        for ad, gun, ind, fiyat in yaklasan:
+            st.write(f"• **{ad}** – {gun} gün kaldı → Önerilen İndirim: **%{ind}** (İndirimli Fiyat: {fiyat} TL/adet)")
+
     kritik = [u for u in stoklar if u['min_miktar'] > 0 and u['miktar'] <= u['min_miktar']]
     if kritik:
         st.warning("🚨 Kritik stok:")
@@ -473,7 +551,7 @@ def barkod_yonetimi():
                 else: st.error("Barkod ve ad zorunlu")
 
 def barkod_sayfasi():
-    st.markdown('<div class="main-header">📱 Barkod Okuma (Fotoğraf)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📱 Barkod Okuma ve SKT İndirim</div>', unsafe_allow_html=True)
 
     img_file = st.camera_input("📷 Barkodu gösterip fotoğraf çekin", key="barkod_kamera")
 
@@ -504,6 +582,21 @@ def barkod_sayfasi():
                 st.error(f"⚠️ Bu ürünün SKT'si geçmiş! ({skt_mevcut})")
             elif kalan <= SKT_UYARI_GUN:
                 st.warning(f"⏳ SKT yaklaşıyor: {kalan} gün kaldı ({skt_mevcut})")
+                if stok_urun:
+                    indirim, ind_fiyat = bilimsel_indirim_hesapla(stok_urun)
+                    if indirim > 0:
+                        st.markdown(f"""
+                        <div class="indirim-box">
+                            <h3 style="color:#F97316;">🔥 İndirim Önerisi</h3>
+                            <p>Mevcut Satış Fiyatı: <b>{stok_urun['satis_fiyat']:.2f} TL</b></p>
+                            <p>Önerilen İndirim: <b>%{indirim}</b></p>
+                            <p>İndirimli Fiyat: <b>{ind_fiyat:.2f} TL</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        if st.button(f"📌 İndirimi Uygula (%{indirim} → {ind_fiyat} TL)", key="indirim_uygula"):
+                            db_execute("UPDATE stok SET satis_fiyat=? WHERE barkod=?", (ind_fiyat, barkod))
+                            mesaj_ekle(f"✅ {stok_urun['urun_adi']} için satış fiyatı {ind_fiyat} TL olarak güncellendi")
+                            st.rerun()
             else:
                 st.info(f"📅 SKT: {skt_mevcut} ( {kalan} gün var)")
         except: pass
@@ -566,11 +659,10 @@ def satis_sayfasi():
     urun = urunler[secenekler.index(sec)]
 
     stok_birimi = urun['birim']
-    birim_orani = urun.get('birim_orani', 1.0) or 1.0  # 1 büyük birim kaç adet?
+    birim_orani = urun.get('birim_orani', 1.0) or 1.0
 
     st.info(f"**{urun['urun_adi']}** | Stok: {urun['miktar']} {stok_birimi} | 1 {stok_birimi} = {birim_orani} adet | Adet Fiyatı: {urun['satis_fiyat']:.2f} TL")
 
-    # Satış birimi seçimi
     birim_secenekleri = [stok_birimi, "adet"]
     satis_birimi = st.radio("Satış Birimi", birim_secenekleri, horizontal=True)
 
@@ -578,12 +670,12 @@ def satis_sayfasi():
         max_miktar = urun['miktar']
         miktar = st.number_input(f"Miktar ({stok_birimi})", 0.01, float(max_miktar), format="%.2f", value=1.0)
         stok_dusecek = miktar
-        birim_fiyat = urun['satis_fiyat'] * birim_orani  # kutu/adet farkı
-    else:  # satis_birimi == "adet"
+        birim_fiyat = urun['satis_fiyat'] * birim_orani
+    else:
         toplam_adet = urun['miktar'] * birim_orani
         miktar = st.number_input("Miktar (adet)", 0.01, float(toplam_adet), format="%.2f", value=1.0)
         stok_dusecek = miktar / birim_orani
-        birim_fiyat = urun['satis_fiyat']  # adet fiyatı zaten
+        birim_fiyat = urun['satis_fiyat']
 
     toplam_tutar = miktar * birim_fiyat
     odeme = st.selectbox("Ödeme", ["Nakit","Kredi Kartı","Havale/EFT"])
@@ -627,7 +719,6 @@ def pos_modu():
             urun = db_fetchone("SELECT * FROM stok WHERE barkod=?", (bk,))
             if urun:
                 birim_orani = urun.get('birim_orani', 1.0) or 1.0
-                # Birim fiyat adet başına; sepette gösterirken birim seçimine gerek yok, direkt adet olarak eklenir.
                 fiyat = urun['satis_fiyat']
                 tutar = fiyat * adet
                 toplam += tutar
@@ -663,9 +754,11 @@ def stok_sayfasi():
         df = pd.DataFrame(stok)
         if arama:
             df = df[df['urun_adi'].str.contains(arama, case=False) | df['barkod'].astype(str).str.contains(arama)]
+        # Önerilen indirimi ekleyelim
+        if not df.empty:
+            df['önerilen_indirim'] = df.apply(lambda r: f"%{bilimsel_indirim_hesapla(r)[0]}" if r.get('son_kullanma_tarihi') else "-", axis=1)
         st.dataframe(df, use_container_width=True)
     with tab2:
-        # Checkbox form dışında
         skt_var = st.checkbox("SKT var")
         with st.form("stok_ekle", clear_on_submit=True):
             barkod = st.text_input("Barkod")
