@@ -328,7 +328,7 @@ def fis_olustur(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, odeme_tipi):
     pdf.cell(80,6,txt="Iyi gunlerde kullanin!", ln=True, align='C')
     return _pdf_bytes(pdf)
 
-# ---------- CANLI BARKOD OKUMA ----------
+# ---------- CANLI BARKOD TARAMA (DÜZELTİLMİŞ) ----------
 def canli_barkod_tarayici():
     html_code = """
     <!DOCTYPE html>
@@ -339,45 +339,48 @@ def canli_barkod_tarayici():
         <style>
             body { margin: 0; padding: 0; background: #000; }
             #reader { width: 100%; height: 100vh; }
-            #result { position: fixed; top: 20px; left: 20px; background: #0f0; padding: 10px; border-radius: 10px; display: none; z-index: 999; }
+            #result { 
+                position: fixed; top: 20px; left: 20px; 
+                background: #0f0; color: white; padding: 12px 20px; 
+                border-radius: 10px; display: none; z-index: 999; 
+                font-size: 18px; font-weight: bold;
+            }
         </style>
     </head>
     <body>
         <div id="reader"></div>
         <div id="result"></div>
         <script>
-            function sendToStreamlit(barcode) {
-                const data = { barcode: barcode };
-                window.parent.postMessage({
-                    type: "streamlit:setComponentValue",
-                    data: data
-                }, "*");
-                html5QrcodeScanner.clear();
+            function onScanSuccess(decodedText, decodedResult) {
                 document.getElementById('reader').style.display = 'none';
                 document.getElementById('result').style.display = 'block';
-                document.getElementById('result').innerText = 'Barkod: ' + barcode;
+                document.getElementById('result').innerText = 'Barkod: ' + decodedText;
+                window.parent.postMessage({
+                    type: "streamlit:setComponentValue",
+                    data: { barcode: decodedText }
+                }, "*");
+                html5QrcodeScanner.clear();
             }
 
-            const config = {
-                fps: 10,
+            function onScanFailure(error) {
+                // sessizce devam
+            }
+
+            const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+                fps: 10, 
                 qrbox: { width: 250, height: 150 },
                 rememberLastUsedCamera: true,
                 supportedScanTypes: [
-                    Html5QrcodeScanner.ScanType.SCAN_TYPE_CAMERA,
-                    Html5QrcodeScanner.ScanType.SCAN_TYPE_FILE
+                    Html5QrcodeScanner.ScanType.CAMERA,
+                    Html5QrcodeScanner.ScanType.FILE
                 ]
-            };
-
-            const html5QrcodeScanner = new Html5QrcodeScanner("reader", config, false);
-            html5QrcodeScanner.render(
-                (decodedText) => { sendToStreamlit(decodedText); },
-                (err) => {}
-            );
+            }, false);
+            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
         </script>
     </body>
     </html>
     """
-    result = components.html(html_code, height=500, scrolling=False)
+    result = components.html(html_code, height=600, scrolling=False)
     if result and isinstance(result, dict) and 'barcode' in result:
         return result['barcode']
     return None
