@@ -336,7 +336,6 @@ def fis_olustur(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, odeme_tipi):
 
 # ---------- BARKOD OKUMA (pyzbar) ----------
 def barkod_oku(image_bytes):
-    """Fotoğraftan barkod okur, okunan barkodu döndürür (yoksa None)."""
     if not BARCODE_OK:
         st.error("pyzbar kütüphanesi yüklü değil.")
         return None
@@ -470,7 +469,6 @@ def barkod_yonetimi():
 def barkod_sayfasi():
     st.markdown('<div class="main-header">📱 Barkod Okuma (Fotoğraf)</div>', unsafe_allow_html=True)
 
-    # Kamera ile fotoğraf çek
     img_file = st.camera_input("📷 Barkodu gösterip fotoğraf çekin", key="barkod_kamera")
 
     barkod = None
@@ -515,14 +513,18 @@ def barkod_sayfasi():
         bir = st.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(birim) if birim in BIRIMLER else 0)
         kat = st.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(kategori) if kategori in KATEGORILER else 0)
         islem = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
+
+        # --- SKT seçimi (disabled yöntemi) ---
         skt_guncelle = st.checkbox("SKT güncelle", value=False)
-        yeni_skt = None
-        if skt_guncelle:
-            varsayilan = datetime.strptime(skt_mevcut, "%Y-%m-%d") if skt_mevcut else datetime.now()
-            yeni_skt = st.date_input("Son Kullanma Tarihi", value=varsayilan)
-        else:
-            if skt_mevcut:
-                st.caption(f"Mevcut SKT: {skt_mevcut}")
+        varsayilan_tarih = datetime.strptime(skt_mevcut, "%Y-%m-%d") if skt_mevcut else datetime.now()
+        yeni_skt = st.date_input(
+            "Son Kullanma Tarihi",
+            value=varsayilan_tarih,
+            disabled=not skt_guncelle
+        )
+        if not skt_guncelle and skt_mevcut:
+            st.caption(f"Mevcut SKT: {skt_mevcut}")
+
         submitted = st.form_submit_button("💾 Kaydet")
         if submitted:
             if not ad.strip():
@@ -534,12 +536,12 @@ def barkod_sayfasi():
             gercek = miktar if islem == "📥 Giriş" else -miktar
             if stok_urun:
                 yeni_miktar = max(0, stok_urun['miktar'] + gercek)
-                skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle and yeni_skt else stok_urun['son_kullanma_tarihi']
+                skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle else stok_urun['son_kullanma_tarihi']
                 db_execute("UPDATE stok SET miktar=?, son_kullanma_tarihi=?, urun_adi=?, birim=?, kategori=? WHERE barkod=?",
                            (yeni_miktar, skt_sql, ad.strip(), bir, kat, barkod))
             else:
                 if gercek > 0:
-                    skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle and yeni_skt else ""
+                    skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle else ""
                     db_execute("INSERT INTO stok (urun_adi, miktar, birim, kategori, barkod, son_kullanma_tarihi) VALUES (?,?,?,?,?,?)",
                                (ad.strip(), gercek, bir, kat, barkod, skt_sql))
             hareket_ekle(st.session_state.current_user['kullanici_adi'], islem, ad.strip(), f"{miktar} {bir}")
@@ -645,12 +647,16 @@ def stok_sayfasi():
             raf = st.text_input("Raf No")
             tedarik = st.selectbox("Tedarikçi", ["Yok"]+[t['ad'] for t in db_fetchall("SELECT ad FROM tedarikciler")])
             kdv = st.selectbox("KDV (%)", [1,8,10,18,20], index=1)
-            skt = st.date_input("SKT") if st.checkbox("SKT var") else None
+
+            # --- SKT seçimi (disabled yöntemi) ---
+            skt_var = st.checkbox("SKT var")
+            skt = st.date_input("SKT", disabled=not skt_var, value=datetime.now())
+            skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
+
             if st.form_submit_button("Ekle"):
                 if not ad.strip():
                     st.error("Ürün adı zorunlu")
                 else:
-                    skt_str = skt.strftime("%Y-%m-%d") if skt else ""
                     db_execute("INSERT INTO stok (urun_adi, miktar, birim, kategori, min_miktar, barkod, son_kullanma_tarihi, alis_fiyat, satis_fiyat, tedarikci, raf_no, kdv_oran) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                                (ad.strip(), miktar, birim, kategori, min_m, barkod, skt_str, alis, satis,
                                 tedarik if tedarik!="Yok" else "", raf, kdv))
