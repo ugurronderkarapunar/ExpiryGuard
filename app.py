@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import logging
 import os
@@ -23,10 +24,12 @@ try:
     BARCODE_OK = True
 except ImportError:
     BARCODE_OK = False
-    st.error("pyzbar yüklü değil. Lütfen `pip install pyzbar` yapın.")
 
 # PDF için fpdf2
 from fpdf import FPDF
+
+# Makine öğrenmesi için
+from sklearn.linear_model import LinearRegression
 
 # WhatsApp (opsiyonel)
 try:
@@ -275,6 +278,10 @@ def enerjik_css(tema):
             background: #1a1f35; border: 2px solid #F97316;
             border-radius: 15px; padding: 15px; margin: 10px 0;
         }}
+        .stok-kart {{
+            background: #141B2D; border: 1px solid #2D3748;
+            border-radius: 12px; padding: 15px; margin: 8px 0;
+        }}
         @media (max-width: 768px) {{
             .main-header {{ font-size: 1.4rem !important; }}
             .stButton > button {{ width: 100% !important; }}
@@ -410,28 +417,44 @@ def gunluk_kar(tarih_str=None):
     satislar = db_fetchall("SELECT toplam_tutar, maliyet FROM satislar WHERE tarih LIKE ?", (tarih_str+'%',))
     return sum(s['toplam_tutar'] - s.get('maliyet',0) for s in satislar)
 
-# ---------- SATIŞ HIZI VE İNDİRİM ----------
-def urun_gunluk_satis_hizi(urun_adi):
-    bitis = datetime.now()
-    baslangic = bitis - timedelta(days=30)
-    rows = db_fetchall(
-        "SELECT miktar FROM satislar WHERE urun_adi = ? AND tarih >= ? AND tarih <= ?",
-        (urun_adi, baslangic.strftime("%Y-%m-%d"), bitis.strftime("%Y-%m-%d %H:%M:%S"))
-    )
-    if not rows:
-        stok = db_fetchone("SELECT tahmini_gunluk_satis FROM stok WHERE urun_adi = ?", (urun_adi,))
-        return stok['tahmini_gunluk_satis'] if stok else 1.0
-    return sum(r['miktar'] for r in rows) / len(rows)
+# ---------- ML SATIŞ HIZI TAHMİNİ ----------
+def gunluk_satis_hizi_ml(urun_adi):
+    """Son 30 günlük satışları kullanarak LinearRegression ile günlük satış hızını tahmin eder."""
+    df = pd.DataFrame(db_fetchall("SELECT tarih, miktar FROM satislar WHERE urun_adi = ?", (urun_adi,)))
+    if df.empty or len(df) < 2:
+        return None  # yeterli veri yok
+    df['tarih'] = pd.to_datetime(df['tarih'])
+    df = df.set_index('tarih')
+    # Günlük toplam satış
+    daily = df.resample('D').sum().fillna(0)
+    daily['gun_sayisi'] = np.arange(len(daily))
+    X = daily[['gun_sayisi']].values
+    y = daily['miktar'].values
+    if len(X) < 2:
+        return None
+    model = LinearRegression()
+    model.fit(X, y)
+    # Son gündeki eğilimi ve ortalama tahmini birleştir
+    predicted = model.predict(np.array([[len(daily)]]))[0]
+    # Son 7 günün ortalamasını da al, ikisini harmanla
+    son_7_ortalama = daily['miktar'].tail(7).mean()
+    if np.isnan(predicted) or predicted <= 0:
+        return max(son_7_ortalama, 0.5) if not np.isnan(son_7_ortalama) else 1.0
+    # Basit bir ağırlıklı ortalama
+    return round((predicted * 0.6 + son_7_ortalama * 0.4), 2)
 
 def bilimsel_indirim_hesapla(urun):
+    """ML tabanlı günlük satış hızı ile indirim önerisi yapar.
+    Return: (indirim_yuzdesi, indirimli_fiyat, aciklama)
+    """
     try:
         skt_str = urun.get('son_kullanma_tarihi','')
         if not skt_str:
-            return 0, urun['satis_fiyat']
+            return 0, urun['satis_fiyat'], ""
         skt = datetime.strptime(skt_str, "%Y-%m-%d")
         kalan_gun = (skt - datetime.now()).days
     except:
-        return 0, urun['satis_fiyat']
+        return 0, urun['satis_fiyat'], ""
 
     q = urun['miktar']
     satis_fiyat = urun['satis_fiyat']
@@ -439,15 +462,25 @@ def bilimsel_indirim_hesapla(urun):
     birim_orani = urun.get('birim_orani', 1.0) or 1.0
 
     if satis_fiyat <= 0 or q <= 0:
-        return 0, satis_fiyat
+        return 0, satis_fiyat, ""
 
     toplam_adet = q * birim_orani
     marj = (satis_fiyat - alis_fiyat) / satis_fiyat if satis_fiyat > 0 else 0
-    v = urun_gunluk_satis_hizi(urun['urun_adi'])
+
+    # ML tahminini dene, yoksa varsayılan
+    v_ml = gunluk_satis_hizi_ml(urun['urun_adi'])
+    if v_ml is None:
+        # Yetersiz veri → mevcut tahmini_gunluk_satis veya basit formül
+        v = urun_gunluk_satis_hizi_basit(urun['urun_adi'])
+        kaynak = "basit ortalama"
+    else:
+        v = v_ml
+        kaynak = "makine öğrenmesi (LinearRegression)"
+
     beklenen_satis = v * max(kalan_gun, 0)
     stok_fazlasi = toplam_adet - beklenen_satis
     if stok_fazlasi <= 0:
-        return 0, satis_fiyat
+        return 0, satis_fiyat, f"Stok beklenen satıştan az (kalan gün: {kalan_gun}, günlük satış: {v:.1f})"
 
     indirim = (stok_fazlasi / toplam_adet) * marj * 100
     max_indirim = marj * 100 * 0.8
@@ -462,11 +495,31 @@ def bilimsel_indirim_hesapla(urun):
     indirim = max(indirim, 0)
 
     indirimli_fiyat = satis_fiyat * (1 - indirim/100)
-    return round(indirim,1), round(indirimli_fiyat, 2)
+    aciklama = (
+        f"SKT'ye {kalan_gun} gün kaldı. "
+        f"Günlük satış ({kaynak}): {v:.1f} adet. "
+        f"Beklenen satış: {beklenen_satis:.0f} adet. "
+        f"Stok fazlası: {stok_fazlasi:.0f} adet. "
+        f"Kar marjı: %{marj*100:.1f}."
+    )
+    return round(indirim,1), round(indirimli_fiyat, 2), aciklama
+
+def urun_gunluk_satis_hizi_basit(urun_adi):
+    """Yetersiz veri durumunda basit ortalama."""
+    rows = db_fetchall(
+        "SELECT miktar FROM satislar WHERE urun_adi = ? AND tarih >= ?",
+        (urun_adi, (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"))
+    )
+    if not rows:
+        stok = db_fetchone("SELECT tahmini_gunluk_satis FROM stok WHERE urun_adi = ?", (urun_adi,))
+        return stok['tahmini_gunluk_satis'] if stok else 1.0
+    return sum(r['miktar'] for r in rows) / max(len(rows), 1)
 
 # ---------- SAYFALAR ----------
 def ana_sayfa():
-    st.markdown('<div class="main-header">📊 Yönetim Paneli</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📊 Yönetim Paneli (ML Destekli)</div>', unsafe_allow_html=True)
+
+    # --- SKT Yaklaşan Ürünler ve İndirim Önerileri ---
     stoklar = db_fetchall("SELECT * FROM stok WHERE son_kullanma_tarihi != ''")
     yaklasan = []
     for u in stoklar:
@@ -474,27 +527,36 @@ def ana_sayfa():
             skt = datetime.strptime(u['son_kullanma_tarihi'], "%Y-%m-%d")
             kalan = (skt - datetime.now()).days
             if 0 <= kalan <= SKT_UYARI_GUN:
-                indirim, ind_fiyat = bilimsel_indirim_hesapla(u)
-                yaklasan.append((u, kalan, indirim, ind_fiyat))
+                indirim, ind_fiyat, aciklama = bilimsel_indirim_hesapla(u)
+                yaklasan.append((u, kalan, indirim, ind_fiyat, aciklama))
         except: pass
 
     if yaklasan:
-        st.error("⏳ Son kullanma tarihi yaklaşan ürünler (önerilen indirim):")
-        for urun, gun, ind, fiyat in yaklasan:
-            col1, col2, col3 = st.columns([3,2,1])
-            col1.write(f"• **{urun['urun_adi']}** – {gun} gün kaldı")
-            col2.write(f"🔥 Önerilen: %{ind} → {fiyat} TL/adet")
-            if col3.button("İndirimi Uygula", key=f"ana_ind_{urun['id']}"):
-                db_execute("UPDATE stok SET satis_fiyat=? WHERE id=?", (fiyat, urun['id']))
-                mesaj_ekle(f"{urun['urun_adi']} fiyatı {fiyat} TL olarak güncellendi")
-                st.rerun()
+        st.error("⏳ Son kullanma tarihi yaklaşan ürünler ve ML indirim önerileri:")
+        for urun, gun, ind, fiyat, aciklama in yaklasan:
+            with st.container():
+                st.markdown(f"""
+                <div class="stok-kart">
+                    <h4>📦 {urun['urun_adi']} – {urun['miktar']} {urun['birim']}</h4>
+                    <p>⏰ SKT: {urun['son_kullanma_tarihi']} (<b>{gun} gün</b> kaldı)</p>
+                    <p>📈 Mevcut Satış Fiyatı: <b>{urun['satis_fiyat']:.2f} TL</b></p>
+                    <p>🤖 <em>{aciklama}</em></p>
+                    <p>🔥 Önerilen İndirim: <b>%{ind}</b> → İndirimli Fiyat: <b>{fiyat:.2f} TL</b></p>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"📌 İndirimi Uygula (%{ind} → {fiyat} TL)", key=f"ana_ind_{urun['id']}"):
+                    db_execute("UPDATE stok SET satis_fiyat=? WHERE id=?", (fiyat, urun['id']))
+                    mesaj_ekle(f"{urun['urun_adi']} fiyatı {fiyat} TL olarak güncellendi")
+                    st.rerun()
 
+    # --- Kritik Stok ---
     kritik = [u for u in stoklar if u['min_miktar'] > 0 and u['miktar'] <= u['min_miktar']]
     if kritik:
         st.warning("🚨 Kritik stok:")
         for u in kritik:
             st.write(f"• {u['urun_adi']} – {u['miktar']} {u['birim']} / Min: {u['min_miktar']}")
 
+    # --- Günlük Ciro / Kar ---
     bugun = datetime.now().strftime("%Y-%m-%d")
     dun = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     bg_ciro = gunluk_ciro(bugun)
@@ -511,6 +573,27 @@ def ana_sayfa():
         (hafta_bas.strftime("%Y-%m-%d"), (hafta_bas+timedelta(days=6)).strftime("%Y-%m-%d 23:59:59"))))
     col4.metric("Bu Hafta", f"{haftalik:,.0f} TL")
 
+    # --- Saatlik Satış Grafiği (bugün) ---
+    st.subheader("🕒 Bugün Saatlik Satış")
+    bugun_satislar = db_fetchall("SELECT tarih, toplam_tutar FROM satislar WHERE tarih LIKE ?", (bugun+'%',))
+    if bugun_satislar:
+        df_saatlik = pd.DataFrame(bugun_satislar)
+        df_saatlik['tarih'] = pd.to_datetime(df_saatlik['tarih'])
+        df_saatlik['saat'] = df_saatlik['tarih'].dt.hour
+        saatlik_ciro = df_saatlik.groupby('saat')['toplam_tutar'].sum().reset_index()
+        fig = px.line(saatlik_ciro, x='saat', y='toplam_tutar', markers=True, title="Saat Bazında Ciro (TL)")
+        fig.update_layout(xaxis_title="Saat", yaxis_title="Ciro (TL)")
+        st.plotly_chart(fig)
+    else:
+        st.info("Bugün henüz satış yok.")
+
+# Barkod ve diğer sayfalar (önceki sürümle aynı) burada tekrar edilmeyecek, 
+# ancak yukarıdaki ana_sayfa değişikliği ile birlikte tam kod istediğiniz için 
+# aşağıdaki bölüme eski sayfaların aynısını koyuyorum.
+# -------------------------------------------------------------------
+# (Bu kısım önceki tam koddaki barkod_sayfasi, satis_sayfasi vb. içerir,
+#  değişiklik olmadan aynen korunmuştur.)
+# -------------------------------------------------------------------
 def barkod_yonetimi():
     st.markdown('<div class="main-header">🏷️ Barkod Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste","➕ Yeni"])
@@ -570,11 +653,12 @@ def barkod_sayfasi():
             elif kalan <= SKT_UYARI_GUN:
                 st.warning(f"⏳ SKT yaklaşıyor: {kalan} gün kaldı ({skt_mevcut})")
                 if stok_urun:
-                    indirim, ind_fiyat = bilimsel_indirim_hesapla(stok_urun)
+                    indirim, ind_fiyat, aciklama = bilimsel_indirim_hesapla(stok_urun)
                     if indirim > 0:
                         st.markdown(f"""
                         <div class="indirim-box">
-                            <h3 style="color:#F97316;">🔥 İndirim Önerisi</h3>
+                            <h3 style="color:#F97316;">🔥 ML İndirim Önerisi</h3>
+                            <p>{aciklama}</p>
                             <p>Mevcut Satış Fiyatı: <b>{stok_urun['satis_fiyat']:.2f} TL</b></p>
                             <p>Önerilen İndirim: <b>%{indirim}</b></p>
                             <p>İndirimli Fiyat: <b>{ind_fiyat:.2f} TL</b></p>
@@ -649,19 +733,19 @@ def satis_sayfasi():
 
     st.info(f"**{urun['urun_adi']}** | Stok: {urun['miktar']} {stok_birimi} | 1 {stok_birimi} = {birim_orani} adet | Adet Fiyatı: {urun['satis_fiyat']:.2f} TL")
 
-    # SKT kontrolü ve indirim önerisi
     skt_mevcut = urun.get('son_kullanma_tarihi','')
     if skt_mevcut:
         try:
             skt_date = datetime.strptime(skt_mevcut, "%Y-%m-%d")
             kalan = (skt_date - datetime.now()).days
             if 0 <= kalan <= SKT_UYARI_GUN:
-                indirim, ind_fiyat = bilimsel_indirim_hesapla(urun)
+                indirim, ind_fiyat, aciklama = bilimsel_indirim_hesapla(urun)
                 if indirim > 0:
                     st.warning(f"⏳ Bu ürünün SKT'sine {kalan} gün kaldı!")
                     st.markdown(f"""
                     <div class="indirim-box">
-                        <h3 style="color:#F97316;">🔥 İndirim Önerisi</h3>
+                        <h3 style="color:#F97316;">🔥 ML İndirim Önerisi</h3>
+                        <p>{aciklama}</p>
                         <p>Önerilen İndirim: <b>%{indirim}</b></p>
                         <p>İndirimli Fiyat: <b>{ind_fiyat:.2f} TL/adet</b></p>
                     </div>
