@@ -28,8 +28,12 @@ except ImportError:
 # PDF için fpdf2
 from fpdf import FPDF
 
-# Makine öğrenmesi için
-from sklearn.linear_model import LinearRegression
+# Makine öğrenmesi için (opsiyonel)
+try:
+    from sklearn.linear_model import LinearRegression
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 # WhatsApp (opsiyonel)
 try:
@@ -417,15 +421,25 @@ def gunluk_kar(tarih_str=None):
     satislar = db_fetchall("SELECT toplam_tutar, maliyet FROM satislar WHERE tarih LIKE ?", (tarih_str+'%',))
     return sum(s['toplam_tutar'] - s.get('maliyet',0) for s in satislar)
 
-# ---------- ML SATIŞ HIZI TAHMİNİ ----------
+# ---------- SATIŞ HIZI TAHMİNİ (ML veya Basit) ----------
+def urun_gunluk_satis_hizi_basit(urun_adi):
+    rows = db_fetchall(
+        "SELECT miktar FROM satislar WHERE urun_adi = ? AND tarih >= ?",
+        (urun_adi, (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"))
+    )
+    if not rows:
+        stok = db_fetchone("SELECT tahmini_gunluk_satis FROM stok WHERE urun_adi = ?", (urun_adi,))
+        return stok['tahmini_gunluk_satis'] if stok else 1.0
+    return sum(r['miktar'] for r in rows) / max(len(rows), 1)
+
 def gunluk_satis_hizi_ml(urun_adi):
-    """Son 30 günlük satışları kullanarak LinearRegression ile günlük satış hızını tahmin eder."""
+    if not SKLEARN_AVAILABLE:
+        return None
     df = pd.DataFrame(db_fetchall("SELECT tarih, miktar FROM satislar WHERE urun_adi = ?", (urun_adi,)))
     if df.empty or len(df) < 2:
-        return None  # yeterli veri yok
+        return None
     df['tarih'] = pd.to_datetime(df['tarih'])
     df = df.set_index('tarih')
-    # Günlük toplam satış
     daily = df.resample('D').sum().fillna(0)
     daily['gun_sayisi'] = np.arange(len(daily))
     X = daily[['gun_sayisi']].values
@@ -434,19 +448,13 @@ def gunluk_satis_hizi_ml(urun_adi):
         return None
     model = LinearRegression()
     model.fit(X, y)
-    # Son gündeki eğilimi ve ortalama tahmini birleştir
     predicted = model.predict(np.array([[len(daily)]]))[0]
-    # Son 7 günün ortalamasını da al, ikisini harmanla
     son_7_ortalama = daily['miktar'].tail(7).mean()
     if np.isnan(predicted) or predicted <= 0:
         return max(son_7_ortalama, 0.5) if not np.isnan(son_7_ortalama) else 1.0
-    # Basit bir ağırlıklı ortalama
     return round((predicted * 0.6 + son_7_ortalama * 0.4), 2)
 
 def bilimsel_indirim_hesapla(urun):
-    """ML tabanlı günlük satış hızı ile indirim önerisi yapar.
-    Return: (indirim_yuzdesi, indirimli_fiyat, aciklama)
-    """
     try:
         skt_str = urun.get('son_kullanma_tarihi','')
         if not skt_str:
@@ -467,15 +475,13 @@ def bilimsel_indirim_hesapla(urun):
     toplam_adet = q * birim_orani
     marj = (satis_fiyat - alis_fiyat) / satis_fiyat if satis_fiyat > 0 else 0
 
-    # ML tahminini dene, yoksa varsayılan
     v_ml = gunluk_satis_hizi_ml(urun['urun_adi'])
-    if v_ml is None:
-        # Yetersiz veri → mevcut tahmini_gunluk_satis veya basit formül
-        v = urun_gunluk_satis_hizi_basit(urun['urun_adi'])
-        kaynak = "basit ortalama"
-    else:
+    if v_ml is not None:
         v = v_ml
         kaynak = "makine öğrenmesi (LinearRegression)"
+    else:
+        v = urun_gunluk_satis_hizi_basit(urun['urun_adi'])
+        kaynak = "basit ortalama"
 
     beklenen_satis = v * max(kalan_gun, 0)
     stok_fazlasi = toplam_adet - beklenen_satis
@@ -504,22 +510,10 @@ def bilimsel_indirim_hesapla(urun):
     )
     return round(indirim,1), round(indirimli_fiyat, 2), aciklama
 
-def urun_gunluk_satis_hizi_basit(urun_adi):
-    """Yetersiz veri durumunda basit ortalama."""
-    rows = db_fetchall(
-        "SELECT miktar FROM satislar WHERE urun_adi = ? AND tarih >= ?",
-        (urun_adi, (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"))
-    )
-    if not rows:
-        stok = db_fetchone("SELECT tahmini_gunluk_satis FROM stok WHERE urun_adi = ?", (urun_adi,))
-        return stok['tahmini_gunluk_satis'] if stok else 1.0
-    return sum(r['miktar'] for r in rows) / max(len(rows), 1)
-
 # ---------- SAYFALAR ----------
 def ana_sayfa():
     st.markdown('<div class="main-header">📊 Yönetim Paneli (ML Destekli)</div>', unsafe_allow_html=True)
 
-    # --- SKT Yaklaşan Ürünler ve İndirim Önerileri ---
     stoklar = db_fetchall("SELECT * FROM stok WHERE son_kullanma_tarihi != ''")
     yaklasan = []
     for u in stoklar:
@@ -549,14 +543,12 @@ def ana_sayfa():
                     mesaj_ekle(f"{urun['urun_adi']} fiyatı {fiyat} TL olarak güncellendi")
                     st.rerun()
 
-    # --- Kritik Stok ---
     kritik = [u for u in stoklar if u['min_miktar'] > 0 and u['miktar'] <= u['min_miktar']]
     if kritik:
         st.warning("🚨 Kritik stok:")
         for u in kritik:
             st.write(f"• {u['urun_adi']} – {u['miktar']} {u['birim']} / Min: {u['min_miktar']}")
 
-    # --- Günlük Ciro / Kar ---
     bugun = datetime.now().strftime("%Y-%m-%d")
     dun = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     bg_ciro = gunluk_ciro(bugun)
@@ -573,7 +565,6 @@ def ana_sayfa():
         (hafta_bas.strftime("%Y-%m-%d"), (hafta_bas+timedelta(days=6)).strftime("%Y-%m-%d 23:59:59"))))
     col4.metric("Bu Hafta", f"{haftalik:,.0f} TL")
 
-    # --- Saatlik Satış Grafiği (bugün) ---
     st.subheader("🕒 Bugün Saatlik Satış")
     bugun_satislar = db_fetchall("SELECT tarih, toplam_tutar FROM satislar WHERE tarih LIKE ?", (bugun+'%',))
     if bugun_satislar:
@@ -587,13 +578,6 @@ def ana_sayfa():
     else:
         st.info("Bugün henüz satış yok.")
 
-# Barkod ve diğer sayfalar (önceki sürümle aynı) burada tekrar edilmeyecek, 
-# ancak yukarıdaki ana_sayfa değişikliği ile birlikte tam kod istediğiniz için 
-# aşağıdaki bölüme eski sayfaların aynısını koyuyorum.
-# -------------------------------------------------------------------
-# (Bu kısım önceki tam koddaki barkod_sayfasi, satis_sayfasi vb. içerir,
-#  değişiklik olmadan aynen korunmuştur.)
-# -------------------------------------------------------------------
 def barkod_yonetimi():
     st.markdown('<div class="main-header">🏷️ Barkod Yönetimi</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Liste","➕ Yeni"])
