@@ -15,12 +15,18 @@ import re
 import json
 from PIL import Image
 import numpy as np
+import cv2
+
+# Barkod okuma için pyzbar
+try:
+    from pyzbar.pyzbar import decode as pyzbar_decode
+    BARCODE_OK = True
+except ImportError:
+    BARCODE_OK = False
+    st.error("pyzbar yüklü değil. Lütfen `pip install pyzbar` yapın.")
 
 # PDF için fpdf2
 from fpdf import FPDF
-
-# Canlı barkod tarama için gerekli
-import streamlit.components.v1 as components
 
 # WhatsApp (opsiyonel)
 try:
@@ -328,62 +334,23 @@ def fis_olustur(urun_adi, birim, miktar, birim_fiyat, toplam_tutar, odeme_tipi):
     pdf.cell(80,6,txt="Iyi gunlerde kullanin!", ln=True, align='C')
     return _pdf_bytes(pdf)
 
-# ---------- CANLI BARKOD TARAMA (DÜZELTİLMİŞ) ----------
-def canli_barkod_tarayici():
-    html_code = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-        <style>
-            body { margin: 0; padding: 0; background: #000; }
-            #reader { width: 100%; height: 100vh; }
-            #result { 
-                position: fixed; top: 20px; left: 20px; 
-                background: #0f0; color: white; padding: 12px 20px; 
-                border-radius: 10px; display: none; z-index: 999; 
-                font-size: 18px; font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <div id="reader"></div>
-        <div id="result"></div>
-        <script>
-            function onScanSuccess(decodedText, decodedResult) {
-                document.getElementById('reader').style.display = 'none';
-                document.getElementById('result').style.display = 'block';
-                document.getElementById('result').innerText = 'Barkod: ' + decodedText;
-                window.parent.postMessage({
-                    type: "streamlit:setComponentValue",
-                    data: { barcode: decodedText }
-                }, "*");
-                html5QrcodeScanner.clear();
-            }
-
-            function onScanFailure(error) {
-                // sessizce devam
-            }
-
-            const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-                fps: 10, 
-                qrbox: { width: 250, height: 150 },
-                rememberLastUsedCamera: true,
-                supportedScanTypes: [
-                    Html5QrcodeScanner.ScanType.CAMERA,
-                    Html5QrcodeScanner.ScanType.FILE
-                ]
-            }, false);
-            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-        </script>
-    </body>
-    </html>
-    """
-    result = components.html(html_code, height=600, scrolling=False)
-    if result and isinstance(result, dict) and 'barcode' in result:
-        return result['barcode']
-    return None
+# ---------- BARKOD OKUMA (pyzbar) ----------
+def barkod_oku(image_bytes):
+    """Fotoğraftan barkod okur, okunan barkodu döndürür (yoksa None)."""
+    if not BARCODE_OK:
+        st.error("pyzbar kütüphanesi yüklü değil.")
+        return None
+    try:
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        decoded = pyzbar_decode(pil_img)
+        if decoded:
+            return decoded[0].data.decode("utf-8")
+        return None
+    except Exception as e:
+        logging.error(f"Barkod okuma hatası: {e}")
+        return None
 
 # ---------- İLETİŞİM ----------
 def email_gonder(alici, konu, mesaj):
@@ -501,10 +468,20 @@ def barkod_yonetimi():
                 else: st.error("Barkod ve ad zorunlu")
 
 def barkod_sayfasi():
-    st.markdown('<div class="main-header">📱 Canlı Barkod Okuma</div>', unsafe_allow_html=True)
-    barkod = canli_barkod_tarayici()
+    st.markdown('<div class="main-header">📱 Barkod Okuma (Fotoğraf)</div>', unsafe_allow_html=True)
+
+    # Kamera ile fotoğraf çek
+    img_file = st.camera_input("📷 Barkodu gösterip fotoğraf çekin", key="barkod_kamera")
+
+    barkod = None
+    if img_file:
+        with st.spinner("Barkod okunuyor..."):
+            barkod = barkod_oku(img_file.getvalue())
+        if not barkod:
+            st.error("Fotoğrafta barkod bulunamadı, lütfen daha net çekin.")
+
     if not barkod:
-        st.info("Kamera açık, barkodu gösterin...")
+        st.info("📷 Kamera açık, barkodu gösterip alttaki butona tıklayarak fotoğraf çekin.")
         return
 
     st.success(f"✅ Okunan: {barkod}")
@@ -599,14 +576,19 @@ def pos_modu():
     st.markdown('<div class="main-header">🛒 Hızlı POS</div>', unsafe_allow_html=True)
     if "pos_sepet" not in st.session_state:
         st.session_state.pos_sepet = {}
-    barkod = canli_barkod_tarayici() if st.button("📷 Barkod Tara") else None
-    if barkod:
-        urun = db_fetchone("SELECT * FROM stok WHERE barkod=? AND miktar>0", (barkod,))
-        if urun:
-            st.session_state.pos_sepet[barkod] = st.session_state.pos_sepet.get(barkod, 0) + 1
-            mesaj_ekle(f"{urun['urun_adi']} sepete eklendi")
+
+    img_file = st.camera_input("📷 Barkodu tarat", key="pos_kamera")
+    if img_file:
+        barkod = barkod_oku(img_file.getvalue())
+        if barkod:
+            urun = db_fetchone("SELECT * FROM stok WHERE barkod=? AND miktar>0", (barkod,))
+            if urun:
+                st.session_state.pos_sepet[barkod] = st.session_state.pos_sepet.get(barkod, 0) + 1
+                mesaj_ekle(f"{urun['urun_adi']} sepete eklendi")
+            else:
+                st.error("Ürün bulunamadı veya stok yok")
         else:
-            st.error("Ürün bulunamadı veya stok yok")
+            st.error("Barkod okunamadı")
         st.rerun()
 
     if st.session_state.pos_sepet:
