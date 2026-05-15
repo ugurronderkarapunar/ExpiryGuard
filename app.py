@@ -509,12 +509,11 @@ def barkod_sayfasi():
 
     with st.form("barkod_islem_form", clear_on_submit=True):
         ad = st.text_input("Ürün Adı *", value=urun_adi)
-        miktar = st.number_input("Miktar", 0.01, format="%.2f", value=1.0)
+        miktar = st.number_input(f"Miktar ({birim})", 0.01, format="%.2f", value=1.0)
         bir = st.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(birim) if birim in BIRIMLER else 0)
         kat = st.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(kategori) if kategori in KATEGORILER else 0)
         islem = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
 
-        # --- SKT seçimi (disabled yöntemi) ---
         skt_guncelle = st.checkbox("SKT güncelle", value=False)
         varsayilan_tarih = datetime.strptime(skt_mevcut, "%Y-%m-%d") if skt_mevcut else datetime.now()
         yeni_skt = st.date_input(
@@ -554,12 +553,14 @@ def satis_sayfasi():
     if not urunler:
         st.warning("Satılacak ürün yok")
         return
-    sec = st.selectbox("Ürün Seç", [f"{u['urun_adi']} ({u['miktar']} {u['birim']} - {u['satis_fiyat']} TL)" for u in urunler])
-    idx = [f"{u['urun_adi']} ({u['miktar']} {u['birim']} - {u['satis_fiyat']} TL)" for u in urunler].index(sec)
+    # Her ürün için: Ad (Birim Fiyat: X TL/birim, Stok: Miktar Birim)
+    secenekler = [f"{u['urun_adi']} (Birim Fiyat: {u['satis_fiyat']:.2f} TL/{u['birim']}, Stok: {u['miktar']} {u['birim']})" for u in urunler]
+    sec = st.selectbox("Ürün Seç", secenekler)
+    idx = secenekler.index(sec)
     urun = urunler[idx]
-    fiyat = urun['satis_fiyat']
-    miktar = st.number_input("Miktar", 0.01, float(urun['miktar']), format="%.2f", value=1.0)
-    toplam = miktar * fiyat
+    st.info(f"**{urun['urun_adi']}** – Birim Fiyat: **{urun['satis_fiyat']:.2f} TL/{urun['birim']}**")
+    miktar = st.number_input(f"Miktar ({urun['birim']})", 0.01, float(urun['miktar']), format="%.2f", value=1.0)
+    toplam = miktar * urun['satis_fiyat']
     odeme = st.selectbox("Ödeme", ["Nakit","Kredi Kartı","Havale/EFT"])
     st.markdown(f"### Toplam: {toplam:.2f} TL")
     if st.button("Satış Yap", use_container_width=True):
@@ -567,7 +568,7 @@ def satis_sayfasi():
             st.error("Geçersiz miktar")
         else:
             db_execute("UPDATE stok SET miktar = miktar - ? WHERE id=?", (miktar, urun['id']))
-            satis_kaydet(urun['urun_adi'], urun['birim'], miktar, fiyat, toplam,
+            satis_kaydet(urun['urun_adi'], urun['birim'], miktar, urun['satis_fiyat'], toplam,
                          st.session_state.current_user['kullanici_adi'], urun['alis_fiyat'], odeme)
             hareket_ekle(st.session_state.current_user['kullanici_adi'], "Satış", urun['urun_adi'],
                          f"{miktar} {urun['birim']}")
@@ -602,7 +603,7 @@ def pos_modu():
                 tutar = fiyat * adet
                 toplam += tutar
                 c1,c2,c3 = st.columns([3,1,1])
-                c1.write(f"📦 {urun['urun_adi']} – {adet} x {fiyat:.2f} = {tutar:.2f} TL")
+                c1.write(f"📦 {urun['urun_adi']} – {adet} x {fiyat:.2f} TL/{urun['birim']} = {tutar:.2f} TL")
                 yeni = c2.number_input("Adet", 1, value=adet, key=f"pos_{bk}")
                 if yeni != adet:
                     st.session_state.pos_sepet[bk] = yeni; st.rerun()
@@ -641,14 +642,13 @@ def stok_sayfasi():
             miktar = st.number_input("Miktar", 0.0, format="%.2f", value=1.0)
             birim = st.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(bilgi['birim']) if bilgi and bilgi['birim'] in BIRIMLER else 0)
             kategori = st.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(bilgi['kategori']) if bilgi and bilgi['kategori'] in KATEGORILER else 0)
-            alis = st.number_input("Alış Fiyatı", 0.0, format="%.2f")
-            satis = st.number_input("Satış Fiyatı", 0.0, format="%.2f")
+            alis = st.number_input("Alış Fiyatı (birim başına)", 0.0, format="%.2f")
+            satis = st.number_input("Satış Fiyatı (birim başına)", 0.0, format="%.2f")
             min_m = st.number_input("Min Stok", 0.0, value=5.0)
             raf = st.text_input("Raf No")
             tedarik = st.selectbox("Tedarikçi", ["Yok"]+[t['ad'] for t in db_fetchall("SELECT ad FROM tedarikciler")])
             kdv = st.selectbox("KDV (%)", [1,8,10,18,20], index=1)
 
-            # --- SKT seçimi (disabled yöntemi) ---
             skt_var = st.checkbox("SKT var")
             skt = st.date_input("SKT", disabled=not skt_var, value=datetime.now())
             skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
