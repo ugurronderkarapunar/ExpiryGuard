@@ -96,7 +96,8 @@ def init_db():
         tedarikci TEXT DEFAULT '',
         raf_no TEXT DEFAULT '',
         kdv_oran INTEGER DEFAULT 8,
-        tahmini_gunluk_satis REAL DEFAULT 1.0
+        tahmini_gunluk_satis REAL DEFAULT 1.0,
+        birim_orani REAL DEFAULT 1.0
     )''')
     cur.execute('''CREATE TABLE IF NOT EXISTS fire (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,6 +151,11 @@ def init_db():
         rol TEXT,
         ad TEXT
     )''')
+    # Eksik sütunları ekle (eski DB için)
+    try:
+        cur.execute("ALTER TABLE stok ADD COLUMN birim_orani REAL DEFAULT 1.0")
+    except:
+        pass
     db.commit()
 
 def db_execute(query, params=()):
@@ -507,6 +513,9 @@ def barkod_sayfasi():
     else:
         st.warning("Yeni barkod. Ürün bilgilerini girin.")
 
+    # Checkbox form dışında
+    skt_guncelle = st.checkbox("SKT güncelle", value=False)
+
     with st.form("barkod_islem_form", clear_on_submit=True):
         ad = st.text_input("Ürün Adı *", value=urun_adi)
         miktar = st.number_input(f"Miktar ({birim})", 0.01, format="%.2f", value=1.0)
@@ -514,15 +523,13 @@ def barkod_sayfasi():
         kat = st.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(kategori) if kategori in KATEGORILER else 0)
         islem = st.radio("İşlem", ["📥 Giriş","📤 Çıkış"], horizontal=True)
 
-        skt_guncelle = st.checkbox("SKT güncelle", value=False)
         varsayilan_tarih = datetime.strptime(skt_mevcut, "%Y-%m-%d") if skt_mevcut else datetime.now()
-        yeni_skt = st.date_input(
-            "Son Kullanma Tarihi",
-            value=varsayilan_tarih,
-            disabled=not skt_guncelle
-        )
-        if not skt_guncelle and skt_mevcut:
-            st.caption(f"Mevcut SKT: {skt_mevcut}")
+        if skt_guncelle:
+            yeni_skt = st.date_input("Son Kullanma Tarihi", value=varsayilan_tarih)
+        else:
+            if skt_mevcut:
+                st.caption(f"Mevcut SKT: {skt_mevcut}")
+            yeni_skt = None
 
         submitted = st.form_submit_button("💾 Kaydet")
         if submitted:
@@ -535,12 +542,12 @@ def barkod_sayfasi():
             gercek = miktar if islem == "📥 Giriş" else -miktar
             if stok_urun:
                 yeni_miktar = max(0, stok_urun['miktar'] + gercek)
-                skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle else stok_urun['son_kullanma_tarihi']
+                skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle and yeni_skt else stok_urun['son_kullanma_tarihi']
                 db_execute("UPDATE stok SET miktar=?, son_kullanma_tarihi=?, urun_adi=?, birim=?, kategori=? WHERE barkod=?",
                            (yeni_miktar, skt_sql, ad.strip(), bir, kat, barkod))
             else:
                 if gercek > 0:
-                    skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle else ""
+                    skt_sql = yeni_skt.strftime("%Y-%m-%d") if skt_guncelle and yeni_skt else ""
                     db_execute("INSERT INTO stok (urun_adi, miktar, birim, kategori, barkod, son_kullanma_tarihi) VALUES (?,?,?,?,?,?)",
                                (ad.strip(), gercek, bir, kat, barkod, skt_sql))
             hareket_ekle(st.session_state.current_user['kullanici_adi'], islem, ad.strip(), f"{miktar} {bir}")
@@ -553,26 +560,46 @@ def satis_sayfasi():
     if not urunler:
         st.warning("Satılacak ürün yok")
         return
-    # Her ürün için: Ad (Birim Fiyat: X TL/birim, Stok: Miktar Birim)
-    secenekler = [f"{u['urun_adi']} (Birim Fiyat: {u['satis_fiyat']:.2f} TL/{u['birim']}, Stok: {u['miktar']} {u['birim']})" for u in urunler]
+
+    secenekler = [f"{u['urun_adi']} (Stok: {u['miktar']} {u['birim']}, Birim Fiyat: {u['satis_fiyat']:.2f} TL/adet)" for u in urunler]
     sec = st.selectbox("Ürün Seç", secenekler)
-    idx = secenekler.index(sec)
-    urun = urunler[idx]
-    st.info(f"**{urun['urun_adi']}** – Birim Fiyat: **{urun['satis_fiyat']:.2f} TL/{urun['birim']}**")
-    miktar = st.number_input(f"Miktar ({urun['birim']})", 0.01, float(urun['miktar']), format="%.2f", value=1.0)
-    toplam = miktar * urun['satis_fiyat']
+    urun = urunler[secenekler.index(sec)]
+
+    stok_birimi = urun['birim']
+    birim_orani = urun.get('birim_orani', 1.0) or 1.0  # 1 büyük birim kaç adet?
+
+    st.info(f"**{urun['urun_adi']}** | Stok: {urun['miktar']} {stok_birimi} | 1 {stok_birimi} = {birim_orani} adet | Adet Fiyatı: {urun['satis_fiyat']:.2f} TL")
+
+    # Satış birimi seçimi
+    birim_secenekleri = [stok_birimi, "adet"]
+    satis_birimi = st.radio("Satış Birimi", birim_secenekleri, horizontal=True)
+
+    if satis_birimi == stok_birimi:
+        max_miktar = urun['miktar']
+        miktar = st.number_input(f"Miktar ({stok_birimi})", 0.01, float(max_miktar), format="%.2f", value=1.0)
+        stok_dusecek = miktar
+        birim_fiyat = urun['satis_fiyat'] * birim_orani  # kutu/adet farkı
+    else:  # satis_birimi == "adet"
+        toplam_adet = urun['miktar'] * birim_orani
+        miktar = st.number_input("Miktar (adet)", 0.01, float(toplam_adet), format="%.2f", value=1.0)
+        stok_dusecek = miktar / birim_orani
+        birim_fiyat = urun['satis_fiyat']  # adet fiyatı zaten
+
+    toplam_tutar = miktar * birim_fiyat
     odeme = st.selectbox("Ödeme", ["Nakit","Kredi Kartı","Havale/EFT"])
-    st.markdown(f"### Toplam: {toplam:.2f} TL")
+    st.markdown(f"### Toplam: {toplam_tutar:.2f} TL")
+
     if st.button("Satış Yap", use_container_width=True):
         if miktar <= 0:
             st.error("Geçersiz miktar")
         else:
-            db_execute("UPDATE stok SET miktar = miktar - ? WHERE id=?", (miktar, urun['id']))
-            satis_kaydet(urun['urun_adi'], urun['birim'], miktar, urun['satis_fiyat'], toplam,
+            yeni_miktar = urun['miktar'] - stok_dusecek
+            db_execute("UPDATE stok SET miktar=? WHERE id=?", (max(0, yeni_miktar), urun['id']))
+            satis_kaydet(urun['urun_adi'], satis_birimi, miktar, birim_fiyat, toplam_tutar,
                          st.session_state.current_user['kullanici_adi'], urun['alis_fiyat'], odeme)
             hareket_ekle(st.session_state.current_user['kullanici_adi'], "Satış", urun['urun_adi'],
-                         f"{miktar} {urun['birim']}")
-            mesaj_ekle(f"Satış: {toplam:.2f} TL")
+                         f"{miktar} {satis_birimi}")
+            mesaj_ekle(f"Satış: {toplam_tutar:.2f} TL")
             st.rerun()
 
 def pos_modu():
@@ -599,11 +626,13 @@ def pos_modu():
         for bk, adet in list(st.session_state.pos_sepet.items()):
             urun = db_fetchone("SELECT * FROM stok WHERE barkod=?", (bk,))
             if urun:
+                birim_orani = urun.get('birim_orani', 1.0) or 1.0
+                # Birim fiyat adet başına; sepette gösterirken birim seçimine gerek yok, direkt adet olarak eklenir.
                 fiyat = urun['satis_fiyat']
                 tutar = fiyat * adet
                 toplam += tutar
                 c1,c2,c3 = st.columns([3,1,1])
-                c1.write(f"📦 {urun['urun_adi']} – {adet} x {fiyat:.2f} TL/{urun['birim']} = {tutar:.2f} TL")
+                c1.write(f"📦 {urun['urun_adi']} – {adet} adet x {fiyat:.2f} TL = {tutar:.2f} TL")
                 yeni = c2.number_input("Adet", 1, value=adet, key=f"pos_{bk}")
                 if yeni != adet:
                     st.session_state.pos_sepet[bk] = yeni; st.rerun()
@@ -613,9 +642,10 @@ def pos_modu():
         if st.button("Satışı Tamamla", type="primary"):
             for bk, adet in st.session_state.pos_sepet.items():
                 urun = db_fetchone("SELECT * FROM stok WHERE barkod=?", (bk,))
-                if urun and urun['miktar'] >= adet:
-                    db_execute("UPDATE stok SET miktar = miktar - ? WHERE barkod=?", (adet, bk))
-                    satis_kaydet(urun['urun_adi'], urun['birim'], adet, urun['satis_fiyat'],
+                if urun and urun['miktar'] * urun.get('birim_orani', 1.0) >= adet:
+                    stok_dusecek = adet / urun.get('birim_orani', 1.0)
+                    db_execute("UPDATE stok SET miktar = miktar - ? WHERE barkod=?", (stok_dusecek, bk))
+                    satis_kaydet(urun['urun_adi'], "adet", adet, urun['satis_fiyat'],
                                  adet*urun['satis_fiyat'], st.session_state.current_user['kullanici_adi'],
                                  urun['alis_fiyat'], "Nakit")
             st.session_state.pos_sepet = {}
@@ -635,6 +665,8 @@ def stok_sayfasi():
             df = df[df['urun_adi'].str.contains(arama, case=False) | df['barkod'].astype(str).str.contains(arama)]
         st.dataframe(df, use_container_width=True)
     with tab2:
+        # Checkbox form dışında
+        skt_var = st.checkbox("SKT var")
         with st.form("stok_ekle", clear_on_submit=True):
             barkod = st.text_input("Barkod")
             bilgi = db_fetchone("SELECT * FROM barkod_db WHERE barkod=?", (barkod,)) if barkod else None
@@ -642,24 +674,26 @@ def stok_sayfasi():
             miktar = st.number_input("Miktar", 0.0, format="%.2f", value=1.0)
             birim = st.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(bilgi['birim']) if bilgi and bilgi['birim'] in BIRIMLER else 0)
             kategori = st.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(bilgi['kategori']) if bilgi and bilgi['kategori'] in KATEGORILER else 0)
-            alis = st.number_input("Alış Fiyatı (birim başına)", 0.0, format="%.2f")
-            satis = st.number_input("Satış Fiyatı (birim başına)", 0.0, format="%.2f")
+            alis = st.number_input("Alış Fiyatı (adet başına)", 0.0, format="%.2f")
+            satis = st.number_input("Satış Fiyatı (adet başına)", 0.0, format="%.2f")
+            birim_orani = st.number_input(f"1 {birim} kaç adet?", min_value=1.0, value=1.0, step=1.0)
             min_m = st.number_input("Min Stok", 0.0, value=5.0)
             raf = st.text_input("Raf No")
             tedarik = st.selectbox("Tedarikçi", ["Yok"]+[t['ad'] for t in db_fetchall("SELECT ad FROM tedarikciler")])
             kdv = st.selectbox("KDV (%)", [1,8,10,18,20], index=1)
 
-            skt_var = st.checkbox("SKT var")
-            skt = st.date_input("SKT", disabled=not skt_var, value=datetime.now())
-            skt_str = skt.strftime("%Y-%m-%d") if skt_var else ""
+            skt_str = ""
+            if skt_var:
+                skt = st.date_input("SKT", value=datetime.now())
+                skt_str = skt.strftime("%Y-%m-%d")
 
             if st.form_submit_button("Ekle"):
                 if not ad.strip():
                     st.error("Ürün adı zorunlu")
                 else:
-                    db_execute("INSERT INTO stok (urun_adi, miktar, birim, kategori, min_miktar, barkod, son_kullanma_tarihi, alis_fiyat, satis_fiyat, tedarikci, raf_no, kdv_oran) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    db_execute("INSERT INTO stok (urun_adi, miktar, birim, kategori, min_miktar, barkod, son_kullanma_tarihi, alis_fiyat, satis_fiyat, tedarikci, raf_no, kdv_oran, birim_orani) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                (ad.strip(), miktar, birim, kategori, min_m, barkod, skt_str, alis, satis,
-                                tedarik if tedarik!="Yok" else "", raf, kdv))
+                                tedarik if tedarik!="Yok" else "", raf, kdv, birim_orani))
                     mesaj_ekle(f"{ad.strip()} eklendi"); st.rerun()
     with tab3:
         stok = db_fetchall("SELECT * FROM stok")
@@ -672,9 +706,10 @@ def stok_sayfasi():
                 miktar = st.number_input("Miktar", value=float(urun['miktar']))
                 birim = st.selectbox("Birim", BIRIMLER, index=BIRIMLER.index(urun['birim']) if urun['birim'] in BIRIMLER else 0)
                 kat = st.selectbox("Kategori", KATEGORILER, index=KATEGORILER.index(urun['kategori']) if urun['kategori'] in KATEGORILER else 0)
+                birim_orani = st.number_input(f"1 {birim} kaç adet?", value=float(urun.get('birim_orani', 1.0)), step=1.0)
                 if st.form_submit_button("Güncelle"):
-                    db_execute("UPDATE stok SET urun_adi=?, miktar=?, birim=?, kategori=? WHERE id=?",
-                               (ad, miktar, birim, kat, urun['id']))
+                    db_execute("UPDATE stok SET urun_adi=?, miktar=?, birim=?, kategori=?, birim_orani=? WHERE id=?",
+                               (ad, miktar, birim, kat, birim_orani, urun['id']))
                     mesaj_ekle("Güncellendi"); st.rerun()
             if st.button("Sil", key=f"sil_{urun['id']}"):
                 db_execute("DELETE FROM stok WHERE id=?", (urun['id'],))
