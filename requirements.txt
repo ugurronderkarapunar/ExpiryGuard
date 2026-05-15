@@ -6,4 +6,4 @@ opencv-python-headless
 numpy
 streamlit-lottie
 fpdf2
-pyzbar
+libzbar0
